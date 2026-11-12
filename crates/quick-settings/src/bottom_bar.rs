@@ -1,7 +1,8 @@
 use mecha_wayland::prelude::*;
 
 use crate::tiles::{
-    BatteryBuilder, BluetoothBuilder, MAX_TILE_HEIGHT, WifiBuilder, action_tile, borders, svg,
+    BatteryBuilder, BluetoothBuilder, KeepAwakeTileBuilder, MAX_TILE_HEIGHT, WifiBuilder,
+    action_tile, borders, svg,
 };
 
 const BOTTOM_BAR_HEIGHT: f32 = MAX_TILE_HEIGHT * 2.0;
@@ -60,14 +61,17 @@ impl Widget for BottomBar {
                 borders: borders::ALL,
             },
         );
-        s.spawn(top, action_tile(svg::DISPLAY, borders::ALL));
-        s.spawn(top, action_tile(svg::TERMINAL, borders::ALL));
-        s.spawn(top, action_tile(svg::MICROPHONE, borders::NO_RIGHT));
+        s.spawn(
+            top,
+            KeepAwakeTileBuilder {
+                borders: borders::ALL,
+            },
+        );
+        s.spawn(top, action_tile(svg::TERMINAL, borders::NO_RIGHT));
 
         let bottom = s.spawn(me, div().style(row));
         s.spawn(bottom, action_tile(svg::RECORD, borders::NO_LEFT));
         s.spawn(bottom, action_tile(svg::SETTINGS, borders::ALL));
-        s.spawn(bottom, action_tile(svg::CAMERA, borders::ALL));
         s.spawn(bottom, action_tile(svg::ROTATE, borders::ALL));
         s.spawn(
             bottom,
@@ -103,7 +107,7 @@ mod tests {
         let size = |height| LayoutStyle::default().size(px(308.0), px(height));
         let window = app.spawn(app.root(), window().layout(size(878.0)));
         let bar = app.spawn(window, BottomBarBuilder);
-        for (parent_height, expected_height) in [(878.0, 212.0), (150.0, 90.0)] {
+        for (parent_height, expected_height) in [(878.0, BOTTOM_BAR_HEIGHT), (150.0, 90.0)] {
             *app.component_mut::<LayoutStyle>(window).unwrap() = size(parent_height);
             app.tick();
 
