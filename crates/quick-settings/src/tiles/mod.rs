@@ -4,12 +4,14 @@ use crate::util::load_icon;
 
 pub mod action;
 pub mod battery;
+pub mod blank;
 pub mod bluetooth;
 pub mod keep_awake;
 pub mod wifi;
 
 pub use action::{action_tile, svg};
 pub use battery::BatteryBuilder;
+pub use blank::BlankTileBuilder;
 pub use bluetooth::BluetoothBuilder;
 pub use keep_awake::KeepAwakeTileBuilder;
 pub use wifi::WifiBuilder;
