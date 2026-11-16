@@ -1,0 +1,12 @@
+# Tiles appear left-to-right, top-to-bottom in two rows of four.
+# Use blank for an empty slot. Fewer than eight entries are padded with blanks.
+# At most eight entries are supported.
+tiles:
+  - wifi
+  - bluetooth
+  - keep_awake
+  - terminal
+  - record
+  - settings
+  - rotate
+  - battery
