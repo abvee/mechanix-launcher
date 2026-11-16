@@ -11,6 +11,7 @@ assets.workspace = true
 mecha-pulseaudio.workspace = true
 power-menu.workspace = true
 tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
 
 [dev-dependencies]
 wayland = { git = "https://github.com/mecha-org/mecha-wayland", branch = "dev", features = ["fake"] }
