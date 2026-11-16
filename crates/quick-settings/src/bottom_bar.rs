@@ -1,8 +1,9 @@
 use mecha_wayland::prelude::*;
 
+use crate::config::{QuickSettingsConfig, TILE_COUNT, TileName, load_config};
 use crate::tiles::{
-    BatteryBuilder, BluetoothBuilder, KeepAwakeTileBuilder, MAX_TILE_HEIGHT, WifiBuilder,
-    action_tile, borders, svg,
+    BatteryBuilder, BlankTileBuilder, BluetoothBuilder, KeepAwakeTileBuilder, MAX_TILE_HEIGHT,
+    WifiBuilder, action_tile, borders, svg,
 };
 
 const BOTTOM_BAR_HEIGHT: f32 = MAX_TILE_HEIGHT * 2.0;
@@ -43,54 +44,156 @@ impl Widget for BottomBar {
     fn build(_: Self::Builder, me: Handle<Self>, s: &mut Spawner<'_, Self>) -> Self {
         *s.component_mut::<LayoutStyle>(me).unwrap() = BottomBar::style(false);
 
-        let row = LayoutStyle::default()
-            .height(percent(50.0))
-            .row()
-            .shrink(0.0);
-        let top = s.spawn(me, div().style(row.clone()));
-        // Edge tiles drop the border on their screen-edge side.
-        s.spawn(
-            top,
-            WifiBuilder {
-                borders: borders::NO_LEFT,
-            },
-        );
-        s.spawn(
-            top,
-            BluetoothBuilder {
-                borders: borders::ALL,
-            },
-        );
-        s.spawn(
-            top,
-            KeepAwakeTileBuilder {
-                borders: borders::ALL,
-            },
-        );
-        s.spawn(top, action_tile(svg::TERMINAL, borders::NO_RIGHT));
-
-        let bottom = s.spawn(me, div().style(row));
-        s.spawn(bottom, action_tile(svg::RECORD, borders::NO_LEFT));
-        s.spawn(bottom, action_tile(svg::SETTINGS, borders::ALL));
-        s.spawn(bottom, action_tile(svg::ROTATE, borders::ALL));
-        s.spawn(
-            bottom,
-            BatteryBuilder {
-                borders: borders::NO_RIGHT,
-            },
-        );
+        // Load at construction time while only tiles need configuration. Errors
+        // still produce a complete grid, with blank slots instead of controls.
+        let config = load_config().unwrap_or_else(|error| {
+            tracing::error!(%error, "Failed to load ./quick-settings.yaml; using eight blank tiles");
+            QuickSettingsConfig {
+                tiles: vec![TileName::Blank; TILE_COUNT],
+            }
+        });
+        spawn_tiles(me, s, config);
 
         BottomBar
+    }
+}
+
+/// Build the fixed grid from a validated config, then drop the config.
+fn spawn_tiles<W: Widget>(me: Handle<W>, s: &mut Spawner<'_, W>, mut config: QuickSettingsConfig) {
+    // Explicit blanks keep their position; missing slots are appended at the end.
+    config.tiles.resize(TILE_COUNT, TileName::Blank);
+    let row_style = LayoutStyle::default()
+        .height(percent(50.0))
+        .row()
+        .shrink(0.0);
+    for tiles in config.tiles.chunks(4) {
+        let row = s.spawn(me, div().style(row_style.clone()));
+        for (column, tile) in tiles.iter().enumerate() {
+            // Edge tiles drop the border on their screen-edge side.
+            let borders = match column {
+                0 => borders::NO_LEFT,
+                3 => borders::NO_RIGHT,
+                _ => borders::ALL,
+            };
+            match tile {
+                TileName::Wifi => {
+                    s.spawn(row, WifiBuilder { borders });
+                }
+                TileName::Bluetooth => {
+                    s.spawn(row, BluetoothBuilder { borders });
+                }
+                TileName::KeepAwake => {
+                    s.spawn(row, KeepAwakeTileBuilder { borders });
+                }
+                TileName::Terminal => {
+                    s.spawn(row, action_tile(svg::TERMINAL, borders));
+                }
+                TileName::Record => {
+                    s.spawn(row, action_tile(svg::RECORD, borders));
+                }
+                TileName::Settings => {
+                    s.spawn(row, action_tile(svg::SETTINGS, borders));
+                }
+                TileName::Rotate => {
+                    s.spawn(row, action_tile(svg::ROTATE, borders));
+                }
+                TileName::Battery => {
+                    s.spawn(row, BatteryBuilder { borders });
+                }
+                TileName::Blank => {
+                    s.spawn(row, BlankTileBuilder { borders });
+                }
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tiles::{battery::Battery, bluetooth::Bluetooth};
+    use crate::tiles::{battery::Battery, blank::BlankTile, bluetooth::Bluetooth, wifi::Wifi};
     use mecha_wayland::mechanix_widgets::NativeText;
     use mecha_wayland::mechanix_widgets::prelude::{FontBook, Text};
     use services::{BatteryPercentageChanged, BluetoothState, BluetoothStateChanged};
+
+    struct ConfiguredGrid;
+
+    struct ConfiguredGridBuilder(QuickSettingsConfig);
+
+    impl Build for ConfiguredGridBuilder {
+        type Widget = ConfiguredGrid;
+    }
+
+    impl Widget for ConfiguredGrid {
+        type Builder = ConfiguredGridBuilder;
+
+        fn build(b: Self::Builder, me: Handle<Self>, s: &mut Spawner<'_, Self>) -> Self {
+            *s.component_mut::<LayoutStyle>(me).unwrap() = BottomBar::style(false);
+            spawn_tiles(me, s, b.0);
+            ConfiguredGrid
+        }
+    }
+
+    fn sample_grid() -> ConfiguredGridBuilder {
+        ConfiguredGridBuilder(yaml_serde::from_str(include_str!("../quick-settings.yaml")).unwrap())
+    }
+
+    #[test]
+    fn configured_order_and_blanks_preserve_all_eight_slots() {
+        for tiles in [
+            vec![TileName::Battery, TileName::Blank, TileName::Wifi],
+            vec![],
+            vec![TileName::Blank; TILE_COUNT],
+        ] {
+            let has_content = matches!(tiles.first(), Some(TileName::Battery));
+            let mut app = App::new();
+            app.add_module(LayoutModule)
+                .add_module(PaintModule)
+                .add_module(WindowModule)
+                .add_module(MechanixTheme::dark());
+            let mut atlas = Atlas::new();
+            let font = atlas.add_font(assets::fonts::GEIST_MONO).unwrap();
+            app.insert_resource(atlas);
+            app.insert_resource(FontBook::new(font));
+            let parent = app.spawn(
+                app.root(),
+                window().layout(LayoutStyle::default().size(px(400.0), px(400.0))),
+            );
+            let grid = app.spawn(parent, ConfiguredGridBuilder(QuickSettingsConfig { tiles }));
+            app.tick();
+
+            let rows = app.children(grid).unwrap();
+            assert_eq!(rows.len(), 2);
+            for (row_index, &row) in rows.iter().enumerate() {
+                let tiles = app.children(row).unwrap();
+                assert_eq!(tiles.len(), 4);
+                for (column, &tile) in tiles.iter().enumerate() {
+                    let index = row_index * 4 + column;
+                    if has_content && index == 0 {
+                        assert!(app.widget::<Battery>(tile).is_some());
+                    } else if has_content && index == 2 {
+                        assert!(app.widget::<Wifi>(tile).is_some());
+                    } else {
+                        assert!(app.widget::<BlankTile>(tile).is_some());
+                    }
+                    let rect = app.component::<ComputedLayout>(tile).unwrap().rect;
+                    assert_eq!(rect.width(), 100.0);
+                    assert!(rect.height() > 0.0);
+                    let Paint::Quad(quad) = app.component::<Paint>(tile).unwrap() else {
+                        panic!("tile is missing its frame");
+                    };
+                    assert_eq!(
+                        quad.border,
+                        match column {
+                            0 => borders::NO_LEFT,
+                            3 => borders::NO_RIGHT,
+                            _ => borders::ALL,
+                        }
+                    );
+                }
+            }
+        }
+    }
 
     #[test]
     fn portrait_rows_follow_the_bar_height_and_keep_their_tiles_inside() {
@@ -106,7 +209,7 @@ mod tests {
 
         let size = |height| LayoutStyle::default().size(px(308.0), px(height));
         let window = app.spawn(app.root(), window().layout(size(878.0)));
-        let bar = app.spawn(window, BottomBarBuilder);
+        let bar = app.spawn(window, sample_grid());
         for (parent_height, expected_height) in [(878.0, BOTTOM_BAR_HEIGHT), (150.0, 90.0)] {
             *app.component_mut::<LayoutStyle>(window).unwrap() = size(parent_height);
             app.tick();
@@ -144,7 +247,7 @@ mod tests {
         let font = atlas.add_font(assets::fonts::GEIST_MONO).unwrap();
         app.insert_resource(atlas);
         app.insert_resource(FontBook::new(font));
-        let bar = app.spawn(app.root(), BottomBarBuilder);
+        let bar = app.spawn(app.root(), sample_grid());
         app.tick();
 
         let border = |app: &App, tile: NodeId| match app.component::<Paint>(tile).unwrap() {
@@ -183,7 +286,7 @@ mod tests {
         let font = atlas.add_font(assets::fonts::GEIST_MONO).unwrap();
         app.insert_resource(atlas);
         app.insert_resource(FontBook::new(font));
-        app.spawn(app.root(), BottomBarBuilder);
+        app.spawn(app.root(), sample_grid());
         app.tick();
 
         let (battery_id, battery) = app.widgets::<Battery>().next().unwrap();
@@ -229,7 +332,7 @@ mod tests {
         let font = atlas.add_font(assets::fonts::GEIST_MONO).unwrap();
         app.insert_resource(atlas);
         app.insert_resource(FontBook::new(font));
-        app.spawn(app.root(), BottomBarBuilder);
+        app.spawn(app.root(), sample_grid());
         app.tick();
 
         let (_, bluetooth) = app.widgets::<Bluetooth>().next().unwrap();
