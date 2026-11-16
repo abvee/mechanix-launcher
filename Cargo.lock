@@ -886,6 +886,7 @@ dependencies = [
  "services",
  "tracing",
  "wayland",
+ "yaml_serde",
 ]
 
 [[package]]
