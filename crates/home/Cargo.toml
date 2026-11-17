@@ -7,4 +7,4 @@ edition = "2024"
 assets.workspace = true
 mecha-wayland.workspace = true
 screen.workspace = true
-
+gestures.workspace = true

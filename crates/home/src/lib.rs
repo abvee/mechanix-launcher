@@ -1,3 +1,4 @@
+use gestures;
 use mecha_wayland::prelude::*;
 use screen::Screen;
 
@@ -8,11 +9,19 @@ pub struct HomeScreen;
 
 impl Screen for HomeScreen {
     fn build(&self, app: &mut App, parent: NodeId) -> NodeId {
-        app.spawn(parent, Home).id()
+        app.spawn(parent, Home { drag: None }).id()
     }
 }
 
-struct Home;
+struct Drag {
+    contact: ContactId,
+    point: Point,
+    axis: gestures::AxisLock,
+}
+
+struct Home {
+    drag: Option<Drag>,
+}
 
 impl Build for Home {
     type Widget = Home;
