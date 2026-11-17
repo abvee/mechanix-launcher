@@ -107,7 +107,10 @@ mod tests {
         let size = |height| LayoutStyle::default().size(px(308.0), px(height));
         let window = app.spawn(app.root(), window().layout(size(878.0)));
         let bar = app.spawn(window, BottomBarBuilder);
-        for (parent_height, expected_height) in [(878.0, BOTTOM_BAR_HEIGHT), (150.0, 90.0)] {
+        for (parent_height, expected_height) in [
+            (878.0, BOTTOM_BAR_HEIGHT),
+            (150.0, 150.0 * PORTRAIT_BODY_PERCENT / 100.0),
+        ] {
             *app.component_mut::<LayoutStyle>(window).unwrap() = size(parent_height);
             app.tick();
 
