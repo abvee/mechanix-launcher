@@ -2,7 +2,7 @@ use app_drawer::{AppDrawer, GEIST_MONO, GEIST_MONO_LIGHT};
 use apps::RegistryModule;
 use control_center::app_screens::AppScreen;
 use control_center::{ControlCenterScreen, select_screen};
-use home::Home;
+use home::HomeScreen;
 use keyboard::{KeyboardModule, hide_keyboard, show_keyboard, suspend_keyboard_zone};
 use lockscreen::{IdleModule, IdleSettings, LockSettings, LockscreenModule};
 use mecha_pulseaudio::{PulseAudioModule, VolumeControlModule};
@@ -125,7 +125,7 @@ fn navigation(cfg: NavConfig, drawer: AppDrawer) -> NavModule {
     // The drawer closes on a down drag only while its list rests at the top;
     // further down, the drag scrolls.
     let at_top = drawer.at_top();
-    let home = container(HOME_ID, Home)
+    let home = container(HOME_ID, HomeScreen)
         .open(bottom_quick(), FADE)
         .close(OnExternal(ExternalEvent::AppLaunched), INSTANT)
         .close(OnExternal(ExternalEvent::WindowOpened), INSTANT)

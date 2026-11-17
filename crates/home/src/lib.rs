@@ -4,22 +4,22 @@ use screen::Screen;
 /// Longer side of the Comet wheel, logical pixels.
 const LOGO_SIZE: u32 = 120;
 
-pub struct Home;
+pub struct HomeScreen;
 
-impl Screen for Home {
+impl Screen for HomeScreen {
     fn build(&self, app: &mut App, parent: NodeId) -> NodeId {
-        app.spawn(parent, HomePage).id()
+        app.spawn(parent, Home).id()
     }
 }
 
-struct HomePage;
+struct Home;
 
-impl Build for HomePage {
-    type Widget = HomePage;
+impl Build for Home {
+    type Widget = Home;
 }
 
-impl Widget for HomePage {
-    type Builder = HomePage;
+impl Widget for Home {
+    type Builder = Home;
 
     fn build(b: Self, me: Handle<Self>, s: &mut Spawner<'_, Self>) -> Self {
         *s.component_mut::<LayoutStyle>(me).unwrap() = LayoutStyle::default()
@@ -51,7 +51,7 @@ mod tests {
             .insert_resource(Atlas::new());
 
         let root = app.root();
-        let page = Home.build(&mut app, root);
+        let page = HomeScreen.build(&mut app, root);
         app.tick();
 
         let icons = app
