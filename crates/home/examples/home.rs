@@ -1,11 +1,16 @@
 //! Run the home screen on its own, without the launcher shell.
 //! `cargo run -p home --example home`
+//!
+//! In a Wayland session, press and drag horizontally with a mouse or touch
+//! to see gesture logs. Home currently shows the logo; swipes do not change
+//! pages yet.
 
 use home::HomeScreen;
 use mecha_wayland::mechanix_widgets::prelude::FontBook;
 use mecha_wayland::prelude::*;
 use screen::Screen;
 
+/// Stop the standalone event loop when the compositor closes its window.
 struct CloseHandler;
 
 struct CloseHandlerBuilder {
@@ -26,6 +31,7 @@ impl Widget for CloseHandler {
 }
 
 fn main() {
+    // Examples have their own entry point; the launcher's subscriber is not run.
     tracing_subscriber::fmt().init();
     let mut app = App::new();
     app.add_module(LayoutModule)
