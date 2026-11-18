@@ -26,6 +26,7 @@ impl Screen for HomeScreen {
             Home {
                 drag: None,
                 pages: Vec::with_capacity(4),
+                active_page: 0,
             },
         )
         .id()
@@ -49,6 +50,7 @@ struct Home {
     /// this is the initial state and is restored on matching release or cancellation.
     drag: Option<Drag>,
     pages: Vec<Handle<HomePage>>,
+    active_page: usize, // index for pages, currently active page
 }
 
 impl Build for Home {
@@ -75,7 +77,7 @@ impl Widget for Home {
             assets::icons::APP,
             assets::icons::SEARCH,
             assets::icons::AIRPLANE,
-        ]; // temporary distinguishing logs
+        ]; // temporary distinguishing logos
 
         for icon in icons {
             b.pages
@@ -105,26 +107,49 @@ fn on_press(ctx: &mut Context<'_, Home>, e: &Press) {
 /// Report the final direction only for a claimed horizontal drag, then
 /// forget it. A release from an ignored second finger must not end this drag.
 fn on_release(ctx: &mut Context<'_, Home>, e: &Release) {
-    let home = ctx.me();
-    let Some(drag) = home.drag.as_mut() else {
-        return;
+    let (current, target) = {
+        let home = ctx.me();
+        let Some(drag) = home.drag.take_if(|drag| drag.contact == e.contact) else {
+            return;
+        };
+
+        if !drag.claimed || home.pages.is_empty() {
+            return;
+        }
+
+        let dx = e.position.x - drag.start_point.x;
+        let current = home.active_page;
+
+        // TODO: make target
+        let target = if dx < 0.0 && current + 1 < home.pages.len() {
+            current + 1 // swipe right
+        } else if dx > 0.0 && current > 0 {
+            current - 1 // swipe left
+        } else {
+            return; // at a boundry, or no net horizontal movement
+        };
+        home.active_page = target;
+        (current, target)
     };
 
-    if drag.contact != e.contact {
-        return;
-    }
+    // TODO: Possibly make this viewport ?
+    assert!(current != target); // should have returned by now
+    tracing::info!("Changed from page {} to page {}", current, target);
 
-    if drag.claimed {
-        let dx = e.position.x - drag.start_point.x;
+    let home = ctx.me();
+    let current = home.pages[current];
+    let target = home.pages[target];
 
-        if dx < 0.0 {
-            tracing::info!("Left swipe");
-        } else if dx > 0.0 {
-            tracing::info!("Right swipe");
-        }
-    }
-
-    home.drag = None;
+    ctx.at(current)
+        .unwrap()
+        .component_mut::<LayoutStyle>()
+        .unwrap()
+        .display = Display::Hidden;
+    ctx.at(target)
+        .unwrap()
+        .component_mut::<LayoutStyle>()
+        .unwrap()
+        .display = Display::Flex;
 }
 
 /// Lock direction using total displacement, then claim horizontal movement
