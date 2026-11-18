@@ -70,14 +70,24 @@ fn on_press(ctx: &mut Context<'_, Home>, e: &Press) {
 
 fn on_release(ctx: &mut Context<'_, Home>, e: &Release) {
     let home = ctx.me();
+    let Some(drag) = home.drag.as_mut() else {
+        return;
+    };
 
-    if home
-        .drag
-        .as_ref()
-        .is_some_and(|drag| drag.contact == e.contact)
-    {
-        home.drag = None;
+    if drag.contact != e.contact {
+        return;
     }
+
+    let dx = e.position.x - drag.start_point.x;
+
+    // left swipe
+    if dx < 0.0 {
+        tracing::info!("Next page");
+    } else if dx > 0.0 {
+        tracing::info!("Previous page");
+    }
+
+    home.drag = None;
 }
 
 fn on_press_moved(ctx: &mut Context<'_, Home>, e: &PressMoved) {
@@ -96,8 +106,9 @@ fn on_press_moved(ctx: &mut Context<'_, Home>, e: &PressMoved) {
     match drag.axis.update(dx, dy) {
         None => {} // Not enough movement to choose an axis yet
         Some(gestures::Axis::Horizontal) => {
-            ctx.claim_contact(e.contact);
-            tracing::info!("Claimed horizontal swipe with contact: {:?}", e.contact);
+            if ctx.claim_contact(e.contact) {
+                tracing::info!("Claimed horizontal swipe with contact: {:?}", e.contact);
+            }
         }
         _ => {} // leave all vertical gestures alone
     }
