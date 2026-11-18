@@ -1,9 +1,14 @@
 //! Home's screen and widget-level horizontal gesture handling.
 //!
-//! The screen currently shows the Comet logo. It tracks one contact at a
-//! time, claims horizontal drags, and logs their direction on release.
-//! Page switching is not implemented yet. Vertical gestures remain unclaimed
-//! here so other handlers, including shell navigation, can interpret them.
+//! Four fixed pages use temporary icons to distinguish them. Home tracks one
+//! contact at a time and claims horizontal drags. Releasing to the left shows
+//! the next page; releasing to the right shows the previous one, without
+//! wrapping at either end. Switching is instant: only the active page is shown.
+//!
+//! Once a horizontal drag is claimed, any nonzero final horizontal displacement
+//! selects its direction; there is no additional distance or velocity threshold.
+//! Vertical gestures remain unclaimed here so other handlers, including shell
+//! navigation, can interpret them.
 
 use mecha_wayland::prelude::*;
 use screen::Screen;
@@ -49,8 +54,10 @@ struct Home {
     /// `None` means Home is not tracking a gesture and can accept a new press;
     /// this is the initial state and is restored on matching release or cancellation.
     drag: Option<Drag>,
+    /// Persistent page nodes in navigation order; switching preserves their state.
     pages: Vec<Handle<HomePage>>,
-    active_page: usize, // index for pages, currently active page
+    /// Index of the only visible page. Starts at the first page and never wraps.
+    active_page: usize,
 }
 
 impl Build for Home {
@@ -72,17 +79,19 @@ impl Widget for Home {
         s.on::<PressCancelled>(me, on_press_cancelled);
         s.on::<PressMoved>(me, on_press_moved);
 
+        // Temporary content makes each of the four pages visually distinct.
         let icons = [
             assets::icons::COMET_LOGO,
             assets::icons::APP,
             assets::icons::SEARCH,
             assets::icons::AIRPLANE,
-        ]; // temporary distinguishing logos
+        ];
 
         for icon in icons {
             b.pages
                 .push(s.spawn(me, HomePageBuilder { svg_icon: icon }));
         }
+        // Pages build hidden; Home selects the initially visible one.
         s.component_mut::<LayoutStyle>(b.pages[0]).unwrap().display = Display::Flex;
         b
     }
@@ -104,11 +113,13 @@ fn on_press(ctx: &mut Context<'_, Home>, e: &Press) {
     });
 }
 
-/// Report the final direction only for a claimed horizontal drag, then
-/// forget it. A release from an ignored second finger must not end this drag.
+/// End the matching gesture and switch one page in its final horizontal
+/// direction. Unclaimed gestures, zero displacement, and outward swipes at
+/// the first/last page leave visibility unchanged.
 fn on_release(ctx: &mut Context<'_, Home>, e: &Release) {
     let (current, target) = {
         let home = ctx.me();
+        // Clear only the driving contact, including when a later check returns.
         let Some(drag) = home.drag.take_if(|drag| drag.contact == e.contact) else {
             return;
         };
@@ -120,20 +131,19 @@ fn on_release(ctx: &mut Context<'_, Home>, e: &Release) {
         let dx = e.position.x - drag.start_point.x;
         let current = home.active_page;
 
-        // TODO: make target
         let target = if dx < 0.0 && current + 1 < home.pages.len() {
-            current + 1 // swipe right
+            current + 1 // Swipe left: next page.
         } else if dx > 0.0 && current > 0 {
-            current - 1 // swipe left
+            current - 1 // Swipe right: previous page.
         } else {
-            return; // at a boundry, or no net horizontal movement
+            return; // At a boundary, or no net horizontal movement.
         };
         home.active_page = target;
         (current, target)
     };
 
-    // TODO: Possibly make this viewport ?
-    assert!(current != target); // should have returned by now
+    // Boundary cases returned above. Only these two existing nodes change display.
+    assert!(current != target);
     tracing::info!("Changed from page {} to page {}", current, target);
 
     let home = ctx.me();

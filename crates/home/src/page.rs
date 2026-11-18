@@ -16,6 +16,7 @@ impl Build for HomePageBuilder {
 }
 
 /// Page content: a black background and a centred identifying icon.
+/// Builds hidden; Home owns which page is displayed.
 pub(crate) struct HomePage;
 impl Widget for HomePage {
     type Builder = HomePageBuilder;
@@ -25,7 +26,7 @@ impl Widget for HomePage {
             .center()
             .width(percent(100.0))
             .height(percent(100.0))
-            .display(Display::Hidden); // start all pages as hidden, this will be controlled by Home
+            .display(Display::Hidden);
         *s.component_mut::<Paint>(me).unwrap() = Paint::Quad(Quad::new(Color::BLACK));
 
         let logo = s

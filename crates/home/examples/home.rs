@@ -1,9 +1,10 @@
 //! Run the home screen on its own, without the launcher shell.
 //! `cargo run -p home --example home`
 //!
-//! In a Wayland session, press and drag horizontally with a mouse or touch
-//! to see gesture logs. Home currently shows the logo; swipes do not change
-//! pages yet.
+//! In a Wayland session, press and drag left/right with a mouse or touch, then
+//! release to switch instantly between four icon-marked pages. Left advances,
+//! right goes back, and outward swipes at either end stay on the current page.
+//! Gesture claims and page changes are logged to the terminal.
 
 use home::HomeScreen;
 use mecha_wayland::mechanix_widgets::prelude::FontBook;
