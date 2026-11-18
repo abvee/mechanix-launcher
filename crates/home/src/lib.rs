@@ -8,8 +8,8 @@
 use mecha_wayland::prelude::*;
 use screen::Screen;
 
-/// Longer side of the Comet wheel, logical pixels.
-const LOGO_SIZE: u32 = 120;
+mod page;
+use page::*;
 
 /// Movement in logical pixels before choosing an axis, not a page-switch
 /// distance. Either axis must exceed this threshold before it can lock.
@@ -21,7 +21,14 @@ pub struct HomeScreen;
 
 impl Screen for HomeScreen {
     fn build(&self, app: &mut App, parent: NodeId) -> NodeId {
-        app.spawn(parent, Home { drag: None }).id()
+        app.spawn(
+            parent,
+            Home {
+                drag: None,
+                pages: Vec::with_capacity(4),
+            },
+        )
+        .id()
     }
 }
 
@@ -37,7 +44,11 @@ struct Drag {
 
 /// The persistent screen widget; its pending gesture is independent of layout.
 struct Home {
+    /// The contact currently being tracked, even before an axis is chosen.
+    /// `None` means Home is not tracking a gesture and can accept a new press;
+    /// this is the initial state and is restored on matching release or cancellation.
     drag: Option<Drag>,
+    pages: Vec<Handle<HomePage>>,
 }
 
 impl Build for Home {
@@ -47,24 +58,30 @@ impl Build for Home {
 impl Widget for Home {
     type Builder = Home;
 
-    fn build(b: Self, me: Handle<Self>, s: &mut Spawner<'_, Self>) -> Self {
+    fn build(mut b: Self, me: Handle<Self>, s: &mut Spawner<'_, Self>) -> Self {
         *s.component_mut::<LayoutStyle>(me).unwrap() = LayoutStyle::default()
             .center()
             .width(percent(100.0))
             .height(percent(100.0));
-        *s.component_mut::<Paint>(me).unwrap() = Paint::Quad(Quad::new(Color::BLACK));
-
-        let logo = s
-            .resource_mut::<Atlas>()
-            .insert_svg(assets::icons::COMET_LOGO, LOGO_SIZE)
-            .expect("embedded Comet logo is a valid SVG");
-        let color = s.color(ColorRole::OnSurface);
-        s.spawn(me, icon(logo).color(color));
+        *s.component_mut::<Paint>(me).unwrap() = Paint::Quad(Quad::new(Color::TRANSPARENT));
 
         s.on::<Press>(me, on_press);
         s.on::<Release>(me, on_release);
         s.on::<PressCancelled>(me, on_press_cancelled);
         s.on::<PressMoved>(me, on_press_moved);
+
+        let icons = [
+            assets::icons::COMET_LOGO,
+            assets::icons::APP,
+            assets::icons::SEARCH,
+            assets::icons::AIRPLANE,
+        ]; // temporary distinguishing logs
+
+        for icon in icons {
+            b.pages
+                .push(s.spawn(me, HomePageBuilder { svg_icon: icon }));
+        }
+        s.component_mut::<LayoutStyle>(b.pages[0]).unwrap().display = Display::Flex;
         b
     }
 }

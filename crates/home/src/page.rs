@@ -24,7 +24,8 @@ impl Widget for HomePage {
         *s.component_mut::<LayoutStyle>(me).unwrap() = LayoutStyle::default()
             .center()
             .width(percent(100.0))
-            .height(percent(100.0));
+            .height(percent(100.0))
+            .display(Display::Hidden); // start all pages as hidden, this will be controlled by Home
         *s.component_mut::<Paint>(me).unwrap() = Paint::Quad(Quad::new(Color::BLACK));
 
         let logo = s
