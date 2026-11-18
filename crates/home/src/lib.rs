@@ -19,6 +19,7 @@ struct Drag {
     contact: ContactId,
     start_point: Point,
     axis: gestures::AxisLock,
+    claimed: bool,
 }
 
 struct Home {
@@ -65,6 +66,7 @@ fn on_press(ctx: &mut Context<'_, Home>, e: &Press) {
         contact: e.contact,
         start_point: e.position,
         axis: gestures::AxisLock::new(HORIZONTAL_SWIPE_THRESHOLD),
+        claimed: false,
     });
 }
 
@@ -80,11 +82,10 @@ fn on_release(ctx: &mut Context<'_, Home>, e: &Release) {
 
     let dx = e.position.x - drag.start_point.x;
 
-    // left swipe
     if dx < 0.0 {
-        tracing::info!("Next page");
+        tracing::info!("Left swipe");
     } else if dx > 0.0 {
-        tracing::info!("Previous page");
+        tracing::info!("Right swipe");
     }
 
     home.drag = None;
@@ -96,7 +97,7 @@ fn on_press_moved(ctx: &mut Context<'_, Home>, e: &PressMoved) {
         return;
     };
 
-    if drag.contact != e.contact {
+    if drag.contact != e.contact || drag.claimed {
         return;
     }
 
@@ -108,6 +109,7 @@ fn on_press_moved(ctx: &mut Context<'_, Home>, e: &PressMoved) {
         Some(gestures::Axis::Horizontal) => {
             if ctx.claim_contact(e.contact) {
                 tracing::info!("Claimed horizontal swipe with contact: {:?}", e.contact);
+                ctx.me().drag.as_mut().unwrap().claimed = true;
             }
         }
         _ => {} // leave all vertical gestures alone
