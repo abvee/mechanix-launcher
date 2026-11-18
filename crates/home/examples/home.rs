@@ -26,6 +26,7 @@ impl Widget for CloseHandler {
 }
 
 fn main() {
+    tracing_subscriber::fmt().init();
     let mut app = App::new();
     app.add_module(LayoutModule)
         .add_module(PaintModule)

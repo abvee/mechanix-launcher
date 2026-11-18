@@ -8,3 +8,7 @@ assets.workspace = true
 mecha-wayland.workspace = true
 screen.workspace = true
 gestures.workspace = true
+tracing = "0.1"
+
+[dev-dependencies]
+tracing-subscriber = "0.3"
