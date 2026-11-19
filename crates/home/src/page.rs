@@ -1,46 +1,54 @@
-//! A full-size home page with a temporary centred icon to distinguish it.
+//! A full-size home page with percentage-positioned items and cell occupancy.
+//!
+//! Item placements are authoritative; occupancy maps each covered cell to an
+//! index in the page's item vector. A centred SVG temporarily identifies the page.
 
 use crate::items::*;
 use mecha_wayland::prelude::*;
 
 /// Longer side of the page icon, in logical pixels.
 const LOGO_SIZE: u32 = 120;
-const GRID_ROWS: u32 = 4;
-const GRID_COLUMNS: u32 = 4;
+/// Grid dimensions used for both percentage placement and occupancy indexing.
+const GRID_ROWS: usize = 4;
+const GRID_COLUMNS: usize = 4;
 
 /// Supplies the temporary identifying icon for a page.
 pub(crate) struct HomePageBuilder {
     /// Embedded SVG bytes used to distinguish pages.
     /// Assets loaded with `include_bytes!()` have a `'static` lifetime.
+    // TODO: Replace the identifying icon with wallpaper.
     pub(super) svg_icon: &'static [u8],
 }
 impl Build for HomePageBuilder {
     type Widget = HomePage;
 }
 
-/// Page content: a black background and a centred identifying icon.
+/// Page content: a background icon and items placed on a fixed grid.
 /// Builds hidden; Home owns which page is displayed.
-pub(crate) struct HomePage;
+pub(crate) struct HomePage {
+    /// Item nodes in index order. Occupancy entries refer to this vector.
+    items: Vec<Handle<HomeItem>>,
+    /// Row-major cell ownership: `None` is empty; `Some(index)` refers to
+    /// `items[index]`. A multi-cell item repeats its index across its footprint.
+    /// Rebuild after adding, removing, reordering, or changing item placements.
+    /// Every stored item index must fit in `u8`.
+    occupancy: [[Option<u8>; GRID_COLUMNS]; GRID_ROWS],
+}
 impl Widget for HomePage {
     type Builder = HomePageBuilder;
 
     fn build(builder: Self::Builder, me: Handle<Self>, s: &mut Spawner<'_, Self>) -> Self {
         *s.component_mut::<LayoutStyle>(me).unwrap() = LayoutStyle::default()
+            // Keep the page in normal flow; its items are positioned absolutely.
             .relative()
-            /*
-            This ^  is purposefully explicit. We want each page to derive
-            it's layout from Home, so that we can use percentages when doing
-            the widget grid.
-            */
             .center()
             .width(percent(100.0))
             .height(percent(100.0))
             .display(Display::Hidden);
 
-        // background
         *s.component_mut::<Paint>(me).unwrap() = Paint::Quad(Quad::new(Color::BLACK));
 
-        // spawn logo
+        // Spawn the background icon before items so their content draws above it.
         let logo = s
             .resource_mut::<Atlas>()
             .insert_svg(builder.svg_icon, LOGO_SIZE)
@@ -64,23 +72,38 @@ impl Widget for HomePage {
                 height: 1,
             },
         ];
+        // TODO: Validate the entire placement list before spawning items when
+        // loading configuration. Bounds and collisions are not checked below.
 
-        // TODO: validate positions here. Ideally we would get these from a
-        // config file at this point
+        let mut items: Vec<Handle<HomeItem>> = Vec::new();
+        let mut occupancy = [[None; GRID_COLUMNS]; GRID_ROWS];
 
-        for placement in placements {
+        for (i, placement) in placements.into_iter().enumerate() {
             let style = item_style(&placement);
+
+            // Record every occupied cell using the item's index in spawn order.
+            // TODO: Share this logic with occupancy rebuilding after item edits.
+            for row in placement.row..placement.row + placement.height {
+                for column in placement.column..placement.column + placement.width {
+                    occupancy[row][column] =
+                        Some(u8::try_from(i).expect("item index MUST fit in u8"))
+                }
+            }
+
             let item = s.spawn(me, HomeItem(placement));
-            *s.component_mut::<LayoutStyle>(item).unwrap() = style; // sets the position
+            // The page assigns the wrapper's percentage-based position and size.
+            *s.component_mut::<LayoutStyle>(item).unwrap() = style;
+
+            items[i] = item;
         }
 
-        HomePage
+        HomePage { items, occupancy }
     }
 }
 
-/// convert the placement grid into a rectangle with percentages.
-/// Caller has to supply a valid placement struct
-/// Only call afer you verify that no collisions are possible
+/// Convert a grid footprint into a percentage-based rectangle within the page.
+/// The caller supplies a valid placement. This only calculates layout; it does
+/// not validate bounds, detect collisions, or update occupancy.
 fn item_style(placement: &Placement) -> LayoutStyle {
     let column_percent = 100.0 / GRID_COLUMNS as f32;
     let row_percent = 100.0 / GRID_ROWS as f32;
