@@ -16,6 +16,8 @@ use screen::Screen;
 mod page;
 use page::*;
 
+mod items;
+
 /// Movement in logical pixels before choosing an axis, not a page-switch
 /// distance. Either axis must exceed this threshold before it can lock.
 const AXIS_LOCK_THRESHOLD: f32 = 10.0;
