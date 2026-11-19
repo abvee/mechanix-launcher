@@ -1,5 +1,6 @@
 use mecha_wayland::prelude::*;
 
+// items are 0 indexed
 pub struct Placement {
     // initial row and column
     pub row: u32,
