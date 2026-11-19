@@ -1,5 +1,6 @@
 //! Exercise paging and real input routing without a compositor. ContactInput
 //! verifies capture and child clicks; ticks apply layout before the next gesture.
+//! Included as a unit-test module so private gesture state stays private.
 
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};

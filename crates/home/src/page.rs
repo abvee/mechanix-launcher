@@ -94,7 +94,7 @@ impl Widget for HomePage {
             // The page assigns the wrapper's percentage-based position and size.
             *s.component_mut::<LayoutStyle>(item).unwrap() = style;
 
-            items[i] = item;
+            items.push(item);
         }
 
         HomePage { items, occupancy }
@@ -121,3 +121,7 @@ fn item_style(placement: &Placement) -> LayoutStyle {
             percent(placement.height as f32 * row_percent),
         )
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/page.rs"]
+mod tests;

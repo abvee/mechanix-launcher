@@ -207,4 +207,5 @@ fn on_press_cancelled(ctx: &mut Context<'_, Home>, e: &PressCancelled) {
 }
 
 #[cfg(test)]
+#[path = "../tests/unit/home.rs"]
 mod tests;
