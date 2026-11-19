@@ -49,8 +49,7 @@ impl Widget for HomePage {
         let color = s.color(ColorRole::OnSurface);
         s.spawn(me, icon(logo).color(color));
 
-        // All widget related things here
-        // For now, hardcoded widget positions
+        // Temporary, non-overlapping placements with nonzero spans inside the grid.
         let placements = [
             Placement {
                 row: 0,
