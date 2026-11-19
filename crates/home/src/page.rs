@@ -23,6 +23,12 @@ impl Build for HomePageBuilder {
     type Widget = HomePage;
 }
 
+#[derive(Copy, Clone)]
+enum PageMode {
+    Normal,
+    Edit,
+}
+
 /// Page content: a background icon and items placed on a fixed grid.
 /// Builds hidden; Home owns which page is displayed.
 pub(crate) struct HomePage {
@@ -33,6 +39,8 @@ pub(crate) struct HomePage {
     /// Rebuild after adding, removing, reordering, or changing item placements.
     /// Every stored item index must fit in `u8`.
     occupancy: [[Option<u8>; GRID_COLUMNS]; GRID_ROWS],
+
+    mode: PageMode, // change mode on long press. Each mode has a different way of handling the same state
 }
 impl Widget for HomePage {
     type Builder = HomePageBuilder;
@@ -97,7 +105,11 @@ impl Widget for HomePage {
             items.push(item);
         }
 
-        HomePage { items, occupancy }
+        HomePage {
+            items,
+            occupancy,
+            mode: PageMode::Normal,
+        }
     }
 }
 
