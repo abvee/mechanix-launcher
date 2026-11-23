@@ -64,7 +64,10 @@ fn initial_occupancy_matches_each_pages_spawned_items() {
         // The table's indices must refer to live items with these footprints,
         // not merely contain the right numbers independently of the vector.
         for (index, expected_placement) in placements.iter().enumerate() {
-            let placement = &app.widget::<HomeItem>(page.items[index].id()).unwrap().0;
+            let placement = &app
+                .widget::<HomeItem>(page.items[index].id())
+                .unwrap()
+                .placement;
             assert_eq!(
                 (
                     placement.row,
@@ -174,7 +177,7 @@ impl Ui {
         self.page()
             .items
             .iter()
-            .map(|&item| self.app.widget::<HomeItem>(item).unwrap().0)
+            .map(|&item| self.app.widget::<HomeItem>(item).unwrap().placement)
             .collect()
     }
 
@@ -333,7 +336,8 @@ fn invalid_drop_rolls_back_a_packed_grid() {
                 width: 1,
                 height: 1,
             };
-            let item = ui.app.spawn(ui.page, HomeItem(placement));
+            let number = ui.page().items.len() + 1;
+            let item = ui.app.spawn(ui.page, HomeItemBuilder { placement, number });
             *ui.app.component_mut::<LayoutStyle>(item).unwrap() = item_style(&placement);
             ui.app
                 .widget_mut::<HomePage>(ui.page)

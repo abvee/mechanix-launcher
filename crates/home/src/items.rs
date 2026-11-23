@@ -3,6 +3,10 @@
 use mecha_wayland::mechanix_widgets::prelude::{TextVariant, text};
 use mecha_wayland::prelude::*;
 
+use crate::page::{HomePageModeChanged, PageMode};
+
+const EDIT_BADGE_SIZE: f32 = 24.0;
+
 /// An item's footprint in grid cells, independent of the page's pixel size.
 /// Coordinates are zero-based; spans must be nonzero and fit within the grid.
 /// The page is responsible for validating placements before using them.
@@ -23,31 +27,65 @@ pub struct Placement {
 ///
 /// The page assigns this node's position and size. Icon/widget content is
 /// spawned beneath it and manages its own internal layout.
-// TODO: make this not a tuple struct because we will also be passing the
-// HomeWidget builder here
-pub(super) struct HomeItem(pub(super) Placement);
+pub(super) struct HomeItem {
+    pub(super) placement: Placement,
+    /// Hidden until the page's mode-change handler shows it.
+    pub(super) edit_badge: Handle<Div>,
+}
 
-impl Build for HomeItem {
+pub(super) struct HomeItemBuilder {
+    pub(super) placement: Placement,
+    pub(super) number: usize,
+}
+
+impl Build for HomeItemBuilder {
     type Widget = HomeItem;
 }
 
 impl Widget for HomeItem {
-    type Builder = HomeItem;
+    type Builder = HomeItemBuilder;
     fn build(item: Self::Builder, me: Handle<Self>, s: &mut Spawner<'_, Self>) -> Self {
         *s.component_mut::<LayoutStyle>(me).unwrap() = LayoutStyle::default().absolute();
-
         *s.component_mut::<Paint>(me).unwrap() = Paint::None;
-        item
+
+        spawn_placeholder(s, me, item.number);
+        // Spawn after the card so the badge draws above its top-right corner.
+        // fixed
+        let edit_badge = s.spawn(
+            me,
+            div().style(
+                LayoutStyle::default()
+                    .absolute()
+                    .inset(Insets::new(px(0.0), px(0.0), auto(), auto()))
+                    .size(px(EDIT_BADGE_SIZE), px(EDIT_BADGE_SIZE))
+                    .center()
+                    .display(Display::Hidden),
+            ),
+        );
+        let background = s.color(ColorRole::Primary);
+        *s.component_mut::<Paint>(edit_badge).unwrap() =
+            Paint::Quad(Quad::new(background).radius(EDIT_BADGE_SIZE / 2.0));
+        s.spawn(
+            edit_badge,
+            text("×") // fixed
+                .variant(TextVariant::LabelLarge)
+                .weight(FontWeight::Regular)
+                .size(18.0)
+                .color(ColorRole::OnPrimary)
+                .max_lines(1),
+        );
+
+        s.on::<HomePageModeChanged>(me, on_mode_changed);
+        HomeItem {
+            placement: item.placement,
+            edit_badge,
+        }
     }
 }
 
 /// Temporary content, inset from the grid footprint to leave space between cards.
 /// Keeping it beneath the wrapper lets placement and dragging move it as a unit.
-pub(super) fn spawn_placeholder<W: Widget>(
-    s: &mut Spawner<'_, W>,
-    item: Handle<HomeItem>,
-    number: usize,
-) {
+fn spawn_placeholder<W: Widget>(s: &mut Spawner<'_, W>, item: Handle<HomeItem>, number: usize) {
     let card = s.spawn(
         item,
         div().style(
@@ -69,4 +107,16 @@ pub(super) fn spawn_placeholder<W: Widget>(
             .color(ColorRole::Primary)
             .max_lines(1),
     );
+}
+
+fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
+    let badge = ctx.me().edit_badge;
+    ctx.at(badge)
+        .unwrap()
+        .component_mut::<LayoutStyle>()
+        .unwrap()
+        .display = match e.0 {
+        PageMode::Normal => Display::Hidden,
+        PageMode::Edit => Display::Flex,
+    };
 }

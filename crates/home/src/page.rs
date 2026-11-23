@@ -28,10 +28,14 @@ impl Build for HomePageBuilder {
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
-enum PageMode {
+pub(super) enum PageMode {
     Normal,
     Edit,
 }
+
+/// Emit to HomeItems whenever we change modes
+pub(super) struct HomePageModeChanged(pub(super) PageMode);
+impl Event for HomePageModeChanged {}
 
 struct LongPress {
     contact: ContactId,
@@ -120,10 +124,15 @@ impl Widget for HomePage {
         for (index, placement) in placements.into_iter().enumerate() {
             let style = item_style(&placement);
 
-            let item = s.spawn(me, HomeItem(placement));
+            let item = s.spawn(
+                me,
+                HomeItemBuilder {
+                    placement,
+                    number: index + 1,
+                },
+            );
             // The page assigns the wrapper's percentage-based position and size.
             *s.component_mut::<LayoutStyle>(item).unwrap() = style;
-            spawn_placeholder(s, item, index + 1);
 
             items.push(item);
         }
@@ -276,17 +285,22 @@ fn on_long_press_timeout(ctx: &mut Context<'_, HomePage>, _: &Timeout) {
         return;
     }
 
-    let page = ctx.me();
-    page.long_press.as_mut().unwrap().claimed = true;
-    page.mode = match page.mode {
-        PageMode::Normal => PageMode::Edit,
-        PageMode::Edit => PageMode::Normal,
+    let (mode, targets) = {
+        let page = ctx.me();
+        page.long_press.as_mut().unwrap().claimed = true;
+        page.mode = match page.mode {
+            PageMode::Normal => PageMode::Edit,
+            PageMode::Edit => PageMode::Normal,
+        };
+        let targets: Vec<NodeId> = page.items.iter().map(|item| item.id()).collect();
+        tracing::info!("Long press done, switched mode to: {:?}", page.mode);
+        (page.mode.clone(), targets)
     };
 
-    tracing::info!("Long press done, switched mode to: {:?}", page.mode);
+    ctx.emit(HomePageModeChanged(mode), targets);
 
     // you should be able to start dragging in the same long press
-    if page.mode == PageMode::Edit {
+    if mode == PageMode::Edit {
         if let Some(index) = item_at(ctx, start_point) {
             start_drag(ctx, contact, index, start_point, position);
         }
@@ -326,7 +340,7 @@ fn start_drag(
         .rect;
     let original: Vec<_> = items
         .iter()
-        .map(|&item| ctx.widget::<HomeItem>(item).unwrap().0)
+        .map(|&item| ctx.widget::<HomeItem>(item).unwrap().placement)
         .collect();
     ctx.me().drag = Some(ItemDrag {
         contact,
@@ -386,6 +400,10 @@ fn move_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, position: Poin
 /// Apply a preview to existing wrappers. The dragged wrapper follows the finger.
 fn apply_layout(ctx: &mut Context<'_, HomePage>, placements: &[Placement], skip: Option<usize>) {
     let items = ctx.me().items.clone();
+
+    // TODO: filter these based on what actually changed in the preview
+    // placement and keep the others the same ? We're currently redrawing
+    // everything, which should be fine for a 4x4 grid
     for (index, (&item, placement)) in items.iter().zip(placements).enumerate() {
         if Some(index) != skip {
             *ctx.at(item)
@@ -408,7 +426,7 @@ fn finish_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, commit: bool
     };
     let items = ctx.me().items.clone();
     for (&item, &placement) in items.iter().zip(&placements) {
-        ctx.widget_mut::<HomeItem>(item).unwrap().0 = placement;
+        ctx.widget_mut::<HomeItem>(item).unwrap().placement = placement;
     }
     ctx.me().occupancy = grid::occupancy(&placements).expect("drag result must be a valid grid");
     // This also replaces the dragged item's pixel offsets with percentages.
