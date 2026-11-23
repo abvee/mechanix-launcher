@@ -117,12 +117,13 @@ impl Widget for HomePage {
         let occupancy = grid::occupancy(&placements).expect("valid initial item placements");
         let mut items: Vec<Handle<HomeItem>> = Vec::new();
 
-        for placement in placements {
+        for (index, placement) in placements.into_iter().enumerate() {
             let style = item_style(&placement);
 
             let item = s.spawn(me, HomeItem(placement));
             // The page assigns the wrapper's percentage-based position and size.
             *s.component_mut::<LayoutStyle>(item).unwrap() = style;
+            spawn_placeholder(s, item, index + 1);
 
             items.push(item);
         }
@@ -242,7 +243,7 @@ fn on_press_moved(ctx: &mut Context<'_, HomePage>, e: &PressMoved) {
     if distance_squared > LONG_PRESS_SLOP * LONG_PRESS_SLOP {
         clear_long_press(ctx, e.contact);
 
-        tracing::info!("Long press cancelled: {:?}", e.contact);
+        tracing::info!("Pending long press cancelled by movement: {:?}", e.contact);
     }
 }
 

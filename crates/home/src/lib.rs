@@ -24,7 +24,7 @@ mod items;
 const AXIS_LOCK_THRESHOLD: f32 = 10.0;
 
 /// Builds Home under the supplied parent; the host owns the window and
-/// installs layout, paint, interactivity, timers, the theme, and an atlas.
+/// installs layout, paint, interactivity, timers, the theme, an atlas, and a FontBook.
 pub struct HomeScreen;
 
 impl Screen for HomeScreen {

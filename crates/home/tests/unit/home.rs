@@ -6,6 +6,7 @@ use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 
 use super::*;
+use mecha_wayland::mechanix_widgets::prelude::FontBook;
 
 #[derive(Default)]
 struct ChildEvents {
@@ -61,6 +62,11 @@ impl Ui {
             .init_resource::<ChildEvents>()
             .init_resource::<Timers>()
             .insert_resource(Atlas::new());
+        let font = app
+            .resource_mut::<Atlas>()
+            .add_font(assets::fonts::GEIST_MONO)
+            .unwrap();
+        app.insert_resource(FontBook::new(font));
 
         let root = app.root();
         let window = app

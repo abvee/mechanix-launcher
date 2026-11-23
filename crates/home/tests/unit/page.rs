@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::HomeScreen;
+use mecha_wayland::mechanix_widgets::prelude::FontBook;
 use screen::Screen;
 
 #[test]
@@ -15,6 +16,11 @@ fn initial_occupancy_matches_each_pages_spawned_items() {
         .add_module(MechanixTheme::dark())
         .init_resource::<Timers>()
         .insert_resource(Atlas::new());
+    let font = app
+        .resource_mut::<Atlas>()
+        .add_font(assets::fonts::GEIST_MONO)
+        .unwrap();
+    app.insert_resource(FontBook::new(font));
 
     let root = app.root();
     let window = app
@@ -110,6 +116,11 @@ impl Ui {
             .add_module(MechanixTheme::dark())
             .init_resource::<Timers>()
             .insert_resource(Atlas::new());
+        let font = app
+            .resource_mut::<Atlas>()
+            .add_font(assets::fonts::GEIST_MONO)
+            .unwrap();
+        app.insert_resource(FontBook::new(font));
         let root = app.root();
         let window = app
             .spawn(

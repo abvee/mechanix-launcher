@@ -1,5 +1,6 @@
 //! Logical grid placement and the positioning wrapper for a homescreen item.
 
+use mecha_wayland::mechanix_widgets::prelude::{TextVariant, text};
 use mecha_wayland::prelude::*;
 
 /// An item's footprint in grid cells, independent of the page's pixel size.
@@ -20,8 +21,8 @@ pub struct Placement {
 
 /// A wrapper holding an item's logical placement.
 ///
-/// The page assigns this node's position and size. Future icon/widget content
-/// will be spawned beneath it and manage its own internal layout.
+/// The page assigns this node's position and size. Icon/widget content is
+/// spawned beneath it and manages its own internal layout.
 // TODO: make this not a tuple struct because we will also be passing the
 // HomeWidget builder here
 pub(super) struct HomeItem(pub(super) Placement);
@@ -35,9 +36,37 @@ impl Widget for HomeItem {
     fn build(item: Self::Builder, me: Handle<Self>, s: &mut Spawner<'_, Self>) -> Self {
         *s.component_mut::<LayoutStyle>(me).unwrap() = LayoutStyle::default().absolute();
 
-        // Red temporarily exposes the allocated rectangle. Once content is
-        // spawned beneath the wrapper, use Paint::None for the wrapper itself.
-        *s.component_mut::<Paint>(me).unwrap() = Paint::Quad(Quad::new(Color::rgb(1.0, 0.0, 0.0)));
+        *s.component_mut::<Paint>(me).unwrap() = Paint::None;
         item
     }
+}
+
+/// Temporary content, inset from the grid footprint to leave space between cards.
+/// Keeping it beneath the wrapper lets placement and dragging move it as a unit.
+pub(super) fn spawn_placeholder<W: Widget>(
+    s: &mut Spawner<'_, W>,
+    item: Handle<HomeItem>,
+    number: usize,
+) {
+    let card = s.spawn(
+        item,
+        div().style(
+            LayoutStyle::default()
+                .absolute()
+                .inset(Insets::all(px(8.0)))
+                .center(),
+        ),
+    );
+    let background = s.color(ColorRole::SurfaceContainer);
+    let border = s.color(ColorRole::OutlineVariant);
+    *s.component_mut::<Paint>(card).unwrap() =
+        Paint::Quad(Quad::new(background).radius(16.0).border(1.0, border));
+    s.spawn(
+        card,
+        text(format!("Widget {number}"))
+            .variant(TextVariant::TitleMedium)
+            .weight(FontWeight::Regular)
+            .color(ColorRole::Primary)
+            .max_lines(1),
+    );
 }
