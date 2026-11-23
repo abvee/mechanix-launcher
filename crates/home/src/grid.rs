@@ -31,6 +31,15 @@ fn occupy(cells: &mut Occupancy, index: usize, p: Placement) {
     }
 }
 
+/// clear a valid item's entire footprint from the working occupancy
+fn clear(grid: &mut Occupancy, placement: Placement) {
+    for row in placement.row..placement.row + placement.height {
+        for column in placement.column..placement.column + placement.width {
+            grid[row][column] = None;
+        }
+    }
+}
+
 /// Reject invalid spans, out-of-bounds footprints, and overlaps.
 pub(super) fn occupancy(placements: &[Placement]) -> Option<Occupancy> {
     if placements.len() > u8::MAX as usize + 1 {
@@ -44,13 +53,6 @@ pub(super) fn occupancy(placements: &[Placement]) -> Option<Occupancy> {
         occupy(&mut cells, index, placement);
     }
     Some(cells)
-}
-
-fn overlaps(a: Placement, b: Placement) -> bool {
-    a.column < b.column + b.width
-        && b.column < a.column + a.width
-        && a.row < b.row + b.height
-        && b.row < a.row + a.height
 }
 
 /// Anchor nearest to the dragged top-left corner. The caller supplies a valid
@@ -79,32 +81,41 @@ pub(super) fn rearrange(
     dragged: usize,
     target: Placement,
 ) -> Option<Vec<Placement>> {
-    occupancy(original)?;
+    let mut cells = occupancy(original)?;
     let source = *original.get(dragged)?;
+
+    // check if placement is valid
+    // important cuz we will call clear() later and that expects valid
+    // placements
     if !in_bounds(target) || source.width != target.width || source.height != target.height {
         return None;
     }
 
     let mut result = original.to_vec();
     result[dragged] = target;
-    let mut cells = [[None; GRID_COLUMNS]; GRID_ROWS];
-    occupy(&mut cells, dragged, target);
+
+    // clear the dragged item
+    clear(&mut cells, source);
+
     let mut displaced = Vec::new();
-    for (index, &placement) in original.iter().enumerate() {
-        if index == dragged {
-            continue;
-        }
-        if overlaps(placement, target) {
+
+    for row in target.row..target.row + target.height {
+        for column in target.column..target.column + target.width {
+            let Some(index) = cells[row][column] else {
+                continue;
+            };
+            let index = usize::from(index);
             displaced.push(index);
-        } else {
-            occupy(&mut cells, index, placement);
+
+            // clear the items footprint. Prevents rediscovery, we're going to
+            // assign this again later anyways
+            clear(&mut cells, original[index]);
         }
     }
-    displaced.sort_by_key(|&index| {
-        let p = original[index];
-        (std::cmp::Reverse(p.width * p.height), index)
-    });
 
+    occupy(&mut cells, dragged, target);
+
+    // fill into new canidacy slots and return
     for index in displaced {
         let old = original[index];
         let mut nearest = None;
@@ -112,6 +123,8 @@ pub(super) fn rearrange(
         for row in 0..=GRID_ROWS - old.height {
             for column in 0..=GRID_COLUMNS - old.width {
                 let p = Placement { row, column, ..old };
+
+                // change algorithm here, it's nearest first
                 let distance = row.abs_diff(old.row) + column.abs_diff(old.column);
                 if distance < best_distance && fits(&cells, p) {
                     nearest = Some(p);
