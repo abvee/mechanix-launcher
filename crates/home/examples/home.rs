@@ -5,6 +5,10 @@
 //! release to switch instantly between four icon-marked pages. Left advances,
 //! right goes back, and outward swipes at either end stay on the current page.
 //! Gesture claims and page changes are logged to the terminal.
+//!
+//! Hold an item for 250 ms to enter Edit mode, then drag without lifting.
+//! In Edit mode, grab items directly. Neighbours rearrange as you drag.
+//! Release to snap to the preview; long-press empty space to leave Edit mode.
 
 use home::HomeScreen;
 use mecha_wayland::mechanix_widgets::prelude::FontBook;

@@ -59,6 +59,7 @@ impl Ui {
             .add_module(InteractivityModule)
             .add_module(MechanixTheme::dark())
             .init_resource::<ChildEvents>()
+            .init_resource::<Timers>()
             .insert_resource(Atlas::new());
 
         let root = app.root();

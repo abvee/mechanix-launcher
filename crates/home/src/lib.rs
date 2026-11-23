@@ -16,6 +16,7 @@ use screen::Screen;
 mod page;
 use page::*;
 
+mod grid;
 mod items;
 
 /// Movement in logical pixels before choosing an axis, not a page-switch
@@ -23,11 +24,12 @@ mod items;
 const AXIS_LOCK_THRESHOLD: f32 = 10.0;
 
 /// Builds Home under the supplied parent; the host owns the window and
-/// installs layout, paint, interactivity, the theme, and an atlas.
+/// installs layout, paint, interactivity, timers, the theme, and an atlas.
 pub struct HomeScreen;
 
 impl Screen for HomeScreen {
     fn build(&self, app: &mut App, parent: NodeId) -> NodeId {
+        app.system(page::raise_item);
         app.spawn(
             parent,
             Home {
@@ -59,6 +61,7 @@ struct Home {
     /// Persistent page nodes in navigation order; switching preserves their state.
     pages: Vec<Handle<HomePage>>,
     /// Index of the only visible page. Starts at the first page and never wraps.
+    // TODO: Reset the page being left to Normal mode when horizontal paging commits.
     active_page: usize,
 }
 

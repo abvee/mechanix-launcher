@@ -5,6 +5,7 @@ use mecha_wayland::prelude::*;
 /// An item's footprint in grid cells, independent of the page's pixel size.
 /// Coordinates are zero-based; spans must be nonzero and fit within the grid.
 /// The page is responsible for validating placements before using them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Placement {
     /// Row containing the item's top edge.
     pub row: usize,
