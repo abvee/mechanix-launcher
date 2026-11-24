@@ -49,7 +49,13 @@ impl Widget for HomeItem {
         *s.component_mut::<LayoutStyle>(me).unwrap() = LayoutStyle::default().absolute();
         *s.component_mut::<Paint>(me).unwrap() = Paint::None;
 
-        spawn_placeholder(s, me, item.number);
+        let content = spawn_placeholder(s, me.id(), item.number);
+        {
+            let mut style = s.component_mut::<LayoutStyle>(content).unwrap();
+            style.position = Position::Absolute;
+            style.inset = Insets::all(px(CONTENT_INSETS));
+        }
+
         // Spawn after the card so the badge draws above its top-right corner.
         // fixed
         let edit_badge = s.spawn(
@@ -86,16 +92,12 @@ impl Widget for HomeItem {
 
 /// Temporary content, inset from the grid footprint to leave space between cards.
 /// Keeping it beneath the wrapper lets placement and dragging move it as a unit.
-fn spawn_placeholder<W: Widget>(s: &mut Spawner<'_, W>, item: Handle<HomeItem>, number: usize) {
-    let card = s.spawn(
-        item,
-        div().style(
-            LayoutStyle::default()
-                .absolute()
-                .inset(Insets::all(px(8.0)))
-                .center(),
-        ),
-    );
+fn spawn_placeholder<W: Widget>(
+    s: &mut Spawner<'_, W>,
+    parent: NodeId,
+    number: usize,
+) -> Handle<Div> {
+    let card = s.spawn(parent, div().style(LayoutStyle::default().center()));
     let background = s.color(ColorRole::SurfaceContainer);
     let border = s.color(ColorRole::OutlineVariant);
     *s.component_mut::<Paint>(card).unwrap() =
@@ -108,6 +110,7 @@ fn spawn_placeholder<W: Widget>(s: &mut Spawner<'_, W>, item: Handle<HomeItem>, 
             .color(ColorRole::Primary)
             .max_lines(1),
     );
+    card
 }
 
 fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
