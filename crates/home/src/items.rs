@@ -32,6 +32,9 @@ pub(super) struct HomeItem {
     pub(super) placement: Placement,
     /// Hidden until the page's mode-change handler shows it.
     pub(super) edit_badge: Handle<Div>,
+
+    /// The actual widget child
+    content: Handle<Div>,
 }
 
 pub(super) struct HomeItemBuilder {
@@ -83,9 +86,13 @@ impl Widget for HomeItem {
         );
 
         s.on::<HomePageModeChanged>(me, on_mode_changed);
+
+        // only here to determine insets
+        s.on::<OnChanged<ComputedLayout>>(me, on_layout_changed);
         HomeItem {
             placement: item.placement,
             edit_badge,
+            content,
         }
     }
 }
@@ -123,4 +130,45 @@ fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
         PageMode::Normal => Display::Hidden,
         PageMode::Edit => Display::Flex,
     };
+}
+
+// This entire function is candidate to get removed and allow widgets to size
+// themselves in the full size with fixed percentage insets (space for x button
+// and resize handle bars)
+fn on_layout_changed(ctx: &mut Context<'_, HomeItem>, _: &OnChanged<ComputedLayout>) {
+    // this entire function should run only once on our real launcher.
+    // This WILL run multiple times on desktop testing because windows can
+    // resize there
+    /*
+    If this were C, I'd do:
+
+    static bool run_once = false;
+    if (!run_once) return;
+    run_once = true;
+
+    No idea how to do that in Rust though.
+    */
+    let (width, height) = {
+        let rect = ctx.component::<ComputedLayout>().unwrap().rect;
+        (rect.width(), rect.height())
+    };
+
+    if width <= 0.0 || height < 0.0 {
+        return;
+    }
+
+    // the side of the inner square
+    let side = (width.min(height) - 2.0 * CONTENT_INSETS).max(0.0);
+
+    // spacing on the top/bottom and left/right
+    let horizontal = (width - side) / 2.0;
+    let vertical = (height - side) / 2.0;
+
+    let content = ctx.me().content;
+
+    ctx.at(content)
+        .unwrap()
+        .component_mut::<LayoutStyle>()
+        .unwrap()
+        .inset = Insets::new(px(vertical), px(horizontal), px(vertical), px(horizontal));
 }
