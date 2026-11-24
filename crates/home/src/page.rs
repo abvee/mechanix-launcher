@@ -22,6 +22,7 @@ pub(crate) struct HomePageBuilder {
     /// Assets loaded with `include_bytes!()` have a `'static` lifetime.
     // TODO: Replace the identifying icon with wallpaper.
     pub(super) svg_icon: &'static [u8],
+    /// Populate this page with the temporary demonstration widgets.
     pub(super) debug_items: bool,
 }
 impl Build for HomePageBuilder {
@@ -34,7 +35,7 @@ pub(super) enum PageMode {
     Edit,
 }
 
-/// Emit to HomeItems whenever we change modes
+/// Emit to HomeItems whenever we change modes.
 pub(super) struct HomePageModeChanged(pub(super) PageMode);
 impl Event for HomePageModeChanged {}
 
@@ -125,25 +126,28 @@ impl Widget for HomePage {
                 height: 1,
             },
         ];
-        let occupancy = grid::occupancy(&placements).expect("valid initial item placements");
+        let placements = if builder.debug_items {
+            placements.as_slice()
+        } else {
+            &[]
+        };
+        let occupancy = grid::occupancy(placements).expect("valid initial item placements");
         let mut items: Vec<Handle<HomeItem>> = Vec::new();
 
-        if builder.debug_items {
-            for (index, placement) in placements.into_iter().enumerate() {
-                let style = item_style(&placement);
+        for (index, &placement) in placements.iter().enumerate() {
+            let style = item_style(&placement);
 
-                let item = s.spawn(
-                    me,
-                    HomeItemBuilder {
-                        placement,
-                        number: index + 1,
-                    },
-                );
-                // The page assigns the wrapper's percentage-based position and size.
-                *s.component_mut::<LayoutStyle>(item).unwrap() = style;
+            let item = s.spawn(
+                me,
+                HomeItemBuilder {
+                    placement,
+                    number: index + 1,
+                },
+            );
+            // The page assigns the wrapper's percentage-based position and size.
+            *s.component_mut::<LayoutStyle>(item).unwrap() = style;
 
-                items.push(item);
-            }
+            items.push(item);
         }
 
         HomePage {
@@ -303,7 +307,7 @@ fn on_long_press_timeout(ctx: &mut Context<'_, HomePage>, _: &Timeout) {
         };
         let targets: Vec<NodeId> = page.items.iter().map(|item| item.id()).collect();
         tracing::info!("Long press done, switched mode to: {:?}", page.mode);
-        (page.mode.clone(), targets)
+        (page.mode, targets)
     };
 
     ctx.emit(HomePageModeChanged(mode), targets);
@@ -410,9 +414,9 @@ fn move_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, position: Poin
 fn apply_layout(ctx: &mut Context<'_, HomePage>, placements: &[Placement], skip: Option<usize>) {
     let items = ctx.me().items.clone();
 
-    // TODO: filter these based on what actually changed in the preview
-    // placement and keep the others the same ? We're currently redrawing
-    // everything, which should be fine for a 4x4 grid
+    // TODO: Filter these based on what actually changed in the preview
+    // placement and keep the others the same? We're currently writing styles
+    // for every non-dragged item whenever the candidate changes (a 4x8 grid).
     for (index, (&item, placement)) in items.iter().zip(placements).enumerate() {
         if Some(index) != skip {
             *ctx.at(item)

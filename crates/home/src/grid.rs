@@ -3,6 +3,7 @@
 use crate::items::Placement;
 use mecha_wayland::prelude::Size;
 
+/// Row-major page grid: four columns and eight rows.
 pub(super) const GRID_ROWS: usize = 8;
 pub(super) const GRID_COLUMNS: usize = 4;
 pub(super) type Occupancy = [[Option<u8>; GRID_COLUMNS]; GRID_ROWS];
@@ -31,7 +32,7 @@ fn occupy(cells: &mut Occupancy, index: usize, p: Placement) {
     }
 }
 
-/// clear a valid item's entire footprint from the working occupancy
+/// Clear a valid item's entire footprint from the working occupancy.
 fn clear(grid: &mut Occupancy, placement: Placement) {
     for row in placement.row..placement.row + placement.height {
         for column in placement.column..placement.column + placement.width {
@@ -69,8 +70,9 @@ pub(super) fn candidate(footprint: Placement, left: f32, top: f32, size: Size) -
     }
 }
 
-/// Reserve the dragged footprint and all unaffected items. Relocate directly
-/// displaced items, largest first, to their nearest free anchor (Manhattan
+/// Find displaced items through the candidate's occupied cells, leaving
+/// unaffected items in place. Relocate in row-major first-encounter order
+/// to the nearest free anchor (Manhattan
 /// distance from their original anchor; ties use row, then column).
 ///
 /// Always start from the committed arrangement: a preview never accumulates
@@ -81,12 +83,14 @@ pub(super) fn rearrange(
     dragged: usize,
     target: Placement,
 ) -> Option<Vec<Placement>> {
+    // TODO: Reuse the committed occupancy captured at drag start instead of
+    // rebuilding it on every candidate change. Each preview needs a working copy.
     let mut cells = occupancy(original)?;
     let source = *original.get(dragged)?;
 
-    // check if placement is valid
-    // important cuz we will call clear() later and that expects valid
-    // placements
+    // Check if the target is valid and keeps the dragged item's size.
+    // Important cuz we will call clear() later and that expects valid
+    // placements; occupancy(original) already validated the source footprints.
     if !in_bounds(target) || source.width != target.width || source.height != target.height {
         return None;
     }
@@ -107,7 +111,7 @@ pub(super) fn rearrange(
             let index = usize::from(index);
             displaced.push(index);
 
-            // clear the items footprint. Prevents rediscovery, we're going to
+            // Clear the item's whole footprint. Prevents rediscovery; we're going to
             // assign this again later anyways
             clear(&mut cells, original[index]);
         }
@@ -115,7 +119,7 @@ pub(super) fn rearrange(
 
     occupy(&mut cells, dragged, target);
 
-    // fill into new canidacy slots and return
+    // Fill into new candidate slots and return.
     for index in displaced {
         let old = original[index];
         let mut nearest = None;

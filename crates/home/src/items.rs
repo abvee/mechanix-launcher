@@ -6,6 +6,7 @@ use mecha_wayland::prelude::*;
 use crate::page::{HomePageModeChanged, PageMode};
 
 const EDIT_BADGE_SIZE: f32 = 24.0;
+/// Minimum space around the square content, reserved for editing controls.
 const CONTENT_INSETS: f32 = 28.0;
 
 /// An item's footprint in grid cells, independent of the page's pixel size.
@@ -27,13 +28,14 @@ pub struct Placement {
 /// A wrapper holding an item's logical placement.
 ///
 /// The page assigns this node's position and size. Icon/widget content is
-/// spawned beneath it and manages its own internal layout.
+/// spawned beneath it and manages its own internal layout. HomeItem assigns
+/// that child's outer geometry and owns the editing controls.
 pub(super) struct HomeItem {
     pub(super) placement: Placement,
     /// Hidden until the page's mode-change handler shows it.
     pub(super) edit_badge: Handle<Div>,
 
-    /// The actual widget child
+    /// The actual widget child.
     content: Handle<Div>,
 }
 
@@ -87,7 +89,7 @@ impl Widget for HomeItem {
 
         s.on::<HomePageModeChanged>(me, on_mode_changed);
 
-        // only here to determine insets
+        // Only here to determine insets.
         s.on::<OnChanged<ComputedLayout>>(me, on_layout_changed);
         HomeItem {
             placement: item.placement,
@@ -97,7 +99,7 @@ impl Widget for HomeItem {
     }
 }
 
-/// Temporary content, inset from the grid footprint to leave space between cards.
+/// Temporary widget appearance and internal layout; HomeItem assigns its insets.
 /// Keeping it beneath the wrapper lets placement and dragging move it as a unit.
 fn spawn_placeholder<W: Widget>(
     s: &mut Spawner<'_, W>,
@@ -132,28 +134,22 @@ fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
     };
 }
 
-// This entire function is candidate to get removed and allow widgets to size
-// themselves in the full size with fixed percentage insets (space for x button
-// and resize handle bars)
+// TODO: Replace this handler with declarative aspect-ratio sizing when
+// LayoutStyle supports fitting a square within both available dimensions.
+// Fixed percentage insets alone cannot make a rectangular footprint square.
+// Keep space around the content for the x button and resize handle bars.
 fn on_layout_changed(ctx: &mut Context<'_, HomeItem>, _: &OnChanged<ComputedLayout>) {
-    // this entire function should run only once on our real launcher.
-    // This WILL run multiple times on desktop testing because windows can
-    // resize there
-    /*
-    If this were C, I'd do:
-
-    static bool run_once = false;
-    if (!run_once) return;
-    run_once = true;
-
-    No idea how to do that in Rust though.
-    */
+    // This also runs when the wrapper moves or a page is hidden/shown, even on
+    // a fixed-size launcher. Desktop window resizing changes the size as well.
+    // TODO: Cache the last size per HomeItem to skip position-only changes.
+    // A global/static run-once flag would incorrectly share state across items
+    // and prevent later resizes from updating their content.
     let (width, height) = {
         let rect = ctx.component::<ComputedLayout>().unwrap().rect;
         (rect.width(), rect.height())
     };
 
-    if width <= 0.0 || height < 0.0 {
+    if width <= 0.0 || height <= 0.0 {
         return;
     }
 
@@ -172,3 +168,7 @@ fn on_layout_changed(ctx: &mut Context<'_, HomeItem>, _: &OnChanged<ComputedLayo
         .unwrap()
         .inset = Insets::new(px(vertical), px(horizontal), px(vertical), px(horizontal));
 }
+
+#[cfg(test)]
+#[path = "../tests/unit/items.rs"]
+mod tests;
