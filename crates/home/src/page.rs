@@ -320,19 +320,13 @@ fn on_long_press_timeout(ctx: &mut Context<'_, HomePage>, _: &Timeout) {
     }
 }
 
-/// Find the wrapper under the original press, including future child content.
+/// Find the item whose draggable content contains the window-local press.
+/// Scan once in item order, stopping at the first match.
 fn item_at(ctx: &mut Context<'_, HomePage>, point: Point) -> Option<usize> {
     let items = ctx.me().items.clone();
-    items.iter().position(|&item| {
-        let item_ctx = ctx.at(item).unwrap();
-        let rect = item_ctx.component::<ComputedLayout>().unwrap().rect;
-        rect.width() > 0.0
-            && rect.height() > 0.0
-            && point.x >= rect.x()
-            && point.x < rect.x() + rect.width()
-            && point.y >= rect.y()
-            && point.y < rect.y() + rect.height()
-    })
+    items
+        .iter()
+        .position(|&item| HomeItem::can_drag_at(&mut ctx.at(item).unwrap(), point))
 }
 
 /// Called only after the page has claimed this contact.

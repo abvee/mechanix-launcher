@@ -99,6 +99,26 @@ impl Widget for HomeItem {
     }
 }
 
+impl HomeItem {
+    /// Check whether a window-local point lies inside the content, excluding
+    /// the surrounding space reserved for editing controls. Right and bottom
+    /// edges are exclusive, so zero-sized content cannot match.
+    pub fn can_drag_at(ctx: &mut Context<'_, Self>, point: Point) -> bool {
+        let content = ctx.me().content;
+        let rect = ctx
+            .at(content)
+            .unwrap()
+            .component::<ComputedLayout>()
+            .unwrap()
+            .rect;
+
+        rect.x() <= point.x
+            && point.x < rect.x() + rect.width()
+            && rect.y() <= point.y
+            && point.y < rect.y() + rect.height()
+    }
+}
+
 /// Temporary widget appearance and internal layout; HomeItem assigns its insets.
 /// Keeping it beneath the wrapper lets placement and dragging move it as a unit.
 fn spawn_placeholder<W: Widget>(
