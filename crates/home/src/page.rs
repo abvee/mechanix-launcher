@@ -22,6 +22,7 @@ pub(crate) struct HomePageBuilder {
     /// Assets loaded with `include_bytes!()` have a `'static` lifetime.
     // TODO: Replace the identifying icon with wallpaper.
     pub(super) svg_icon: &'static [u8],
+    pub(super) debug_items: bool,
 }
 impl Build for HomePageBuilder {
     type Widget = HomePage;
@@ -117,24 +118,32 @@ impl Widget for HomePage {
                 width: 1,
                 height: 1,
             },
+            Placement {
+                row: 7,
+                column: 0,
+                width: 2,
+                height: 1,
+            },
         ];
         let occupancy = grid::occupancy(&placements).expect("valid initial item placements");
         let mut items: Vec<Handle<HomeItem>> = Vec::new();
 
-        for (index, placement) in placements.into_iter().enumerate() {
-            let style = item_style(&placement);
+        if builder.debug_items {
+            for (index, placement) in placements.into_iter().enumerate() {
+                let style = item_style(&placement);
 
-            let item = s.spawn(
-                me,
-                HomeItemBuilder {
-                    placement,
-                    number: index + 1,
-                },
-            );
-            // The page assigns the wrapper's percentage-based position and size.
-            *s.component_mut::<LayoutStyle>(item).unwrap() = style;
+                let item = s.spawn(
+                    me,
+                    HomeItemBuilder {
+                        placement,
+                        number: index + 1,
+                    },
+                );
+                // The page assigns the wrapper's percentage-based position and size.
+                *s.component_mut::<LayoutStyle>(item).unwrap() = style;
 
-            items.push(item);
+                items.push(item);
+            }
         }
 
         HomePage {

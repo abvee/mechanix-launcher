@@ -86,16 +86,28 @@ impl Widget for Home {
 
         // Temporary content makes each of the four pages visually distinct.
         let icons = [
-            assets::icons::COMET_LOGO,
             assets::icons::APP,
             assets::icons::SEARCH,
             assets::icons::AIRPLANE,
         ];
 
         for icon in icons {
-            b.pages
-                .push(s.spawn(me, HomePageBuilder { svg_icon: icon }));
+            b.pages.push(s.spawn(
+                me,
+                HomePageBuilder {
+                    svg_icon: icon,
+                    debug_items: false,
+                },
+            ));
         }
+        b.pages.push(s.spawn(
+            me,
+            HomePageBuilder {
+                svg_icon: assets::icons::COMET_LOGO,
+                debug_items: true,
+            },
+        ));
+
         // Pages build hidden; Home selects the initially visible one.
         s.component_mut::<LayoutStyle>(b.pages[0]).unwrap().display = Display::Flex;
         b

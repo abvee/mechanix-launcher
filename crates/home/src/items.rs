@@ -6,6 +6,7 @@ use mecha_wayland::prelude::*;
 use crate::page::{HomePageModeChanged, PageMode};
 
 const EDIT_BADGE_SIZE: f32 = 24.0;
+const CONTENT_INSETS: f32 = 28.0;
 
 /// An item's footprint in grid cells, independent of the page's pixel size.
 /// Coordinates are zero-based; spans must be nonzero and fit within the grid.

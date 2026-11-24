@@ -3,7 +3,7 @@
 use crate::items::Placement;
 use mecha_wayland::prelude::Size;
 
-pub(super) const GRID_ROWS: usize = 4;
+pub(super) const GRID_ROWS: usize = 8;
 pub(super) const GRID_COLUMNS: usize = 4;
 pub(super) type Occupancy = [[Option<u8>; GRID_COLUMNS]; GRID_ROWS];
 
