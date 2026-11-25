@@ -1,6 +1,8 @@
 //! Logical grid placement and the positioning wrapper for a homescreen item.
 
-use mecha_wayland::mechanix_widgets::prelude::{TextVariant, text};
+use mecha_wayland::mechanix_widgets::prelude::{
+    Button, ButtonSize, ButtonVariant, TextVariant, button, text,
+};
 use mecha_wayland::prelude::*;
 
 use crate::page::{HomePageModeChanged, PageMode};
@@ -33,7 +35,7 @@ pub struct Placement {
 pub(super) struct HomeItem {
     pub(super) placement: Placement,
     /// Hidden until the page's mode-change handler shows it.
-    pub(super) edit_badge: Handle<Div>,
+    pub(super) edit_badge: Handle<Button>,
 
     /// The actual widget child.
     content: Handle<Div>,
@@ -65,27 +67,22 @@ impl Widget for HomeItem {
         // fixed
         let edit_badge = s.spawn(
             me,
-            div().style(
-                LayoutStyle::default()
-                    .absolute()
-                    .inset(Insets::new(px(0.0), px(0.0), auto(), auto()))
-                    .size(px(EDIT_BADGE_SIZE), px(EDIT_BADGE_SIZE))
-                    .center()
-                    .display(Display::Hidden),
-            ),
+            button()
+                .variant(ButtonVariant::Filled)
+                .size(ButtonSize::Small)
+                .label("×")
+                .radius(Corners::all(EDIT_BADGE_SIZE / 2.0))
+                // inner native button fills out outer node
+                .style(LayoutStyle::default().fill().center()),
         );
-        let background = s.color(ColorRole::Primary);
-        *s.component_mut::<Paint>(edit_badge).unwrap() =
-            Paint::Quad(Quad::new(background).radius(EDIT_BADGE_SIZE / 2.0));
-        s.spawn(
-            edit_badge,
-            text("×") // fixed
-                .variant(TextVariant::LabelLarge)
-                .weight(FontWeight::Regular)
-                .size(18.0)
-                .color(ColorRole::OnPrimary)
-                .max_lines(1),
-        );
+
+        // position the X button wherever we want, we also control it's
+        // visibility
+        *s.component_mut::<LayoutStyle>(edit_badge).unwrap() = LayoutStyle::default()
+            .absolute()
+            .inset(Insets::new(px(0.0), px(0.0), auto(), auto()))
+            .size(px(EDIT_BADGE_SIZE), px(EDIT_BADGE_SIZE))
+            .display(Display::Hidden);
 
         s.on::<HomePageModeChanged>(me, on_mode_changed);
 
