@@ -154,6 +154,9 @@ impl Ui {
         app.component_mut::<LayoutStyle>(page).unwrap().display = Display::Flex;
         app.widget_mut::<crate::Home>(home).unwrap().active_page = 3;
         app.spawn(root, TestClock(page));
+        // One tick lays the wrappers out; only then do the items' layout
+        // handlers write their content insets, which a second tick applies.
+        app.tick();
         app.tick();
         Self {
             app,
@@ -204,6 +207,38 @@ impl Ui {
             .rect
     }
 
+    /// Window-local centre of a node's rect, converted to the page-local
+    /// coordinates `input` expects: `input` adds the (40, 60) page origin
+    /// back on when signalling.
+    fn center_of(&self, node: impl Into<NodeId>) -> (f32, f32) {
+        let rect = self.app.component::<ComputedLayout>(node).unwrap().rect;
+        (
+            rect.x() + rect.width() / 2.0 - 40.0,
+            rect.y() + rect.height() / 2.0 - 60.0,
+        )
+    }
+
+    /// Page-local centre of an item's draggable content square: a press
+    /// here starts a drag on that item.
+    fn content_center(&self, index: usize) -> (f32, f32) {
+        let content = self
+            .app
+            .widget::<HomeItem>(self.page().items[index])
+            .unwrap()
+            .content;
+        self.center_of(content)
+    }
+
+    /// Page-local centre of an item's × button; laid out only in Edit mode.
+    fn x_button_center(&self, index: usize) -> (f32, f32) {
+        let button = self
+            .app
+            .widget::<HomeItem>(self.page().items[index])
+            .unwrap()
+            .x_button;
+        self.center_of(button)
+    }
+
     fn assert_badges(&self, display: Display) {
         for &item in &self.page().items {
             let badge = self.app.widget::<HomeItem>(item).unwrap().x_button;
@@ -245,8 +280,10 @@ fn long_press_starts_drag_without_lifting_and_live_preview_commits_on_release() 
     let occupancy = ui.page().occupancy;
     let item = ui.page().items[0];
     ui.assert_badges(Display::Hidden);
-    ui.press(30.0, 40.0);
-    ui.input(0, ContactPhase::Moved, 33.0, 44.0); // exactly five pixels of slop
+    let press = ui.content_center(0);
+    ui.press(press.0, press.1);
+    // Exactly five pixels of slop: the press still counts as a long press.
+    ui.input(0, ContactPhase::Moved, press.0 + 3.0, press.1 + 4.0);
     ui.timeout();
     assert_eq!(ui.page().mode, PageMode::Edit);
     ui.assert_badges(Display::Flex);
@@ -262,7 +299,8 @@ fn long_press_starts_drag_without_lifting_and_live_preview_commits_on_release() 
     assert_eq!(ui.app.children(ui.page).unwrap().last(), Some(&item.id()));
     assert_eq!((ui.rect(0).x(), ui.rect(0).y()), (43.0, 64.0));
 
-    ui.input(0, ContactPhase::Moved, 270.0, 240.0);
+    // Drag 240 right and 200 down from the grab.
+    ui.input(0, ContactPhase::Moved, press.0 + 240.0, press.1 + 200.0);
     let preview = ui.page().drag.as_ref().unwrap().preview.clone().unwrap();
     assert_eq!((preview[0].column, preview[0].row), (2, 2));
     assert_eq!((preview[1].column, preview[1].row), (3, 4));
@@ -272,7 +310,7 @@ fn long_press_starts_drag_without_lifting_and_live_preview_commits_on_release() 
     assert_eq!(ui.placements(), original);
     assert_eq!(ui.page().occupancy, occupancy);
 
-    ui.input(0, ContactPhase::Released, 270.0, 240.0);
+    ui.input(0, ContactPhase::Released, press.0 + 240.0, press.1 + 200.0);
     assert!(ui.page().drag.is_none());
     assert_eq!(ui.page().mode, PageMode::Edit);
     ui.assert_grid_layout(&preview);
@@ -287,14 +325,15 @@ fn edit_mode_grabs_immediately_and_cancel_restores_neighbours_and_dragged_item()
     let mut ui = Ui::new();
     ui.app.widget_mut::<HomePage>(ui.page).unwrap().mode = PageMode::Edit;
     let original = ui.placements();
-    ui.press(30.0, 40.0);
+    let press = ui.content_center(0);
+    ui.press(press.0, press.1);
     assert!(ui.page().drag.is_some());
     assert!(
         !ui.app
             .resource::<Timers>()
             .is_running(ui.page().long_press_timer)
     );
-    ui.input(0, ContactPhase::Moved, 270.0, 240.0);
+    ui.input(0, ContactPhase::Moved, press.0 + 240.0, press.1 + 200.0);
     assert_ne!(ui.rect(1).y(), 360.0);
 
     // An unrelated release/cancellation must not finish the drag.
@@ -315,7 +354,7 @@ fn edit_mode_grabs_immediately_and_cancel_restores_neighbours_and_dragged_item()
     );
     ui.app.tick();
     assert!(ui.page().drag.is_some());
-    ui.input(0, ContactPhase::Cancelled, 270.0, 240.0);
+    ui.input(0, ContactPhase::Cancelled, press.0 + 240.0, press.1 + 200.0);
     assert!(ui.page().drag.is_none());
     assert_eq!(ui.page().mode, PageMode::Edit);
     ui.assert_grid_layout(&original);
@@ -326,19 +365,22 @@ fn movement_within_one_candidate_still_follows_finger_and_return_restores_previe
     let mut ui = Ui::new();
     ui.app.widget_mut::<HomePage>(ui.page).unwrap().mode = PageMode::Edit;
     let original = ui.placements();
-    ui.press(30.0, 40.0);
-    ui.input(0, ContactPhase::Moved, 220.0, 200.0);
+    let press = ui.content_center(0);
+    ui.press(press.0, press.1);
+    // Two finger positions inside the same candidate cell.
+    ui.input(0, ContactPhase::Moved, press.0 + 190.0, press.1 + 160.0);
     let preview = ui.page().drag.as_ref().unwrap().preview.clone();
-    ui.input(0, ContactPhase::Moved, 230.0, 210.0);
+    ui.input(0, ContactPhase::Moved, press.0 + 200.0, press.1 + 170.0);
     assert_eq!(ui.page().drag.as_ref().unwrap().preview, preview);
     assert_eq!((ui.rect(0).x(), ui.rect(0).y()), (240.0, 230.0));
-    ui.input(0, ContactPhase::Moved, 30.0, 40.0);
+    // Returning to the grab point restores the original preview.
+    ui.input(0, ContactPhase::Moved, press.0, press.1);
     assert_eq!(
         ui.page().drag.as_ref().unwrap().preview.as_ref().unwrap(),
         &original
     );
     assert_eq!(ui.rect(1).y(), 360.0);
-    ui.input(0, ContactPhase::Released, 30.0, 40.0);
+    ui.input(0, ContactPhase::Released, press.0, press.1);
     ui.assert_grid_layout(&original);
 }
 
@@ -346,7 +388,8 @@ fn movement_within_one_candidate_still_follows_finger_and_return_restores_previe
 fn release_uses_its_final_position_and_clamps_whole_footprint() {
     let mut ui = Ui::new();
     ui.app.widget_mut::<HomePage>(ui.page).unwrap().mode = PageMode::Edit;
-    ui.press(30.0, 40.0);
+    let press = ui.content_center(0);
+    ui.press(press.0, press.1);
     ui.input(0, ContactPhase::Released, 2000.0, 2000.0);
     let placements = ui.placements();
     assert_eq!(
@@ -386,10 +429,13 @@ fn invalid_drop_rolls_back_a_packed_grid() {
     let original = ui.placements();
     ui.app.widget_mut::<HomePage>(ui.page).unwrap().occupancy = grid::occupancy(&original).unwrap();
     ui.app.tick();
-    ui.press(390.0, 340.0);
-    ui.input(0, ContactPhase::Moved, 270.0, 340.0);
+    let press = ui.content_center(1);
+    ui.press(press.0, press.1);
+    // One cell left: a valid swap with the icon there.
+    ui.input(0, ContactPhase::Moved, press.0 - 120.0, press.1);
     assert!(ui.page().drag.as_ref().unwrap().preview.is_some());
-    ui.input(0, ContactPhase::Moved, 30.0, 40.0);
+    // Into the 2x2 widget's corner: no contiguous 2x2 home exists for it.
+    ui.input(0, ContactPhase::Moved, press.0 - 360.0, press.1 - 300.0);
     assert!(ui.page().drag.as_ref().unwrap().preview.is_none());
     assert_eq!((ui.rect(1).x(), ui.rect(1).y()), (40.0, 60.0));
     for (index, placement) in original.iter().enumerate() {
@@ -402,7 +448,7 @@ fn invalid_drop_rolls_back_a_packed_grid() {
             );
         }
     }
-    ui.input(0, ContactPhase::Released, 30.0, 40.0);
+    ui.input(0, ContactPhase::Released, press.0 - 360.0, press.1 - 300.0);
     ui.assert_grid_layout(&original);
 }
 
@@ -452,9 +498,10 @@ fn release_cancellation_and_excess_slop_invalidate_pending_long_press() {
 #[test]
 fn stale_timeout_during_restarted_countdown_is_ignored() {
     let mut ui = Ui::new();
-    ui.press(30.0, 40.0);
-    ui.input(0, ContactPhase::Released, 30.0, 40.0);
-    ui.press(30.0, 40.0);
+    let press = ui.content_center(0);
+    ui.press(press.0, press.1);
+    ui.input(0, ContactPhase::Released, press.0, press.1);
+    ui.press(press.0, press.1);
     let id = ui.page().long_press_timer;
     ui.app.emit(Timeout { id }, ui.page);
     ui.app.tick();
@@ -463,4 +510,63 @@ fn stale_timeout_during_restarted_countdown_is_ignored() {
     ui.timeout();
     assert_eq!(ui.page().mode, PageMode::Edit);
     assert!(ui.page().drag.is_some());
+}
+
+#[test]
+fn x_button_click_removes_the_item_and_rebuilds_occupancy() {
+    let mut ui = Ui::new();
+    // Enter Edit mode so the × buttons are shown and laid out.
+    ui.press(300.0, 100.0);
+    ui.timeout();
+    assert_eq!(ui.page().mode, PageMode::Edit);
+    ui.input(0, ContactPhase::Released, 300.0, 100.0);
+
+    let removed = ui.page().items[0];
+    // The survivors keep their placements; their occupancy indices shift down.
+    let survivors: Vec<Placement> = ui.placements().iter().skip(1).cloned().collect();
+
+    // The × sits in the wrapper's margin, so its press claims the button
+    // alone: no drag starts, no mode toggle, no page swipe.
+    let (x, y) = ui.x_button_center(0);
+    ui.press(x, y);
+    ui.input(0, ContactPhase::Released, x, y);
+
+    assert!(!ui.app.is_live(removed));
+    let page = ui.page();
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(ui.placements(), survivors);
+    assert_eq!(page.occupancy, grid::occupancy(&survivors).unwrap());
+    assert_eq!(page.mode, PageMode::Edit);
+    assert!(page.drag.is_none());
+}
+
+#[test]
+fn removal_request_during_a_drag_is_refused() {
+    let mut ui = Ui::new();
+    // Enter Edit mode so the × buttons are shown and laid out.
+    ui.press(300.0, 100.0);
+    ui.timeout();
+    ui.input(0, ContactPhase::Released, 300.0, 100.0);
+
+    // Finger 0 drags item 0...
+    let press = ui.content_center(0);
+    ui.press(press.0, press.1);
+    assert!(ui.page().drag.is_some());
+
+    // ...while finger 1 clicks item 0's ×.
+    let (x, y) = ui.x_button_center(0);
+    ui.input(1, ContactPhase::Moved, x, y);
+    ui.input(1, ContactPhase::Pressed, x, y);
+    ui.input(1, ContactPhase::Released, x, y);
+
+    // The request was refused: the drag and all three items survive.
+    assert!(ui.page().drag.is_some());
+    assert_eq!(ui.page().items.len(), 3);
+    let original = ui.placements();
+    assert_eq!(ui.page().occupancy, grid::occupancy(&original).unwrap());
+
+    // Ending the drag afterwards still commits cleanly.
+    ui.input(0, ContactPhase::Released, press.0, press.1);
+    assert!(ui.page().drag.is_none());
+    ui.assert_grid_layout(&original);
 }

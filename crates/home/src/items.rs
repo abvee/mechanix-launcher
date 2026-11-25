@@ -40,8 +40,10 @@ pub(super) struct HomeItem {
     /// Hidden until the page's mode-change handler shows it.
     pub(super) x_button: Handle<Button>,
 
-    /// The actual widget child.
-    content: Handle<Div>,
+    /// The actual widget child. `pub(super)` lets the page's tests locate
+    /// the draggable content rect; production code uses
+    /// [`HomeItem::can_drag_at`] instead of reading it directly.
+    pub(super) content: Handle<Div>,
 }
 
 /// Builds one item: its committed grid placement and the placeholder's label
