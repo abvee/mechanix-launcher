@@ -94,8 +94,12 @@ impl Widget for HomeItem {
         Release, PressCancelled and PressMoved would have to be added OR
         replace all interactivity events with a single Tap
         */
-        .on::<Clicked>(x_button, |_, _| {
-            tracing::info!("X badge clicked, removal requested");
+        .on::<Clicked>(x_button, move |ctx, _| {
+            // NOTE: .parent() here implicitly assumes HomeItem's direct parent
+            // will handle removal. If this changes, use
+            // ctx.tree().ancestors().find()
+            ctx.emit(RemoveItemRequest(me), ctx.tree().parent(me).unwrap());
+            tracing::info!("X button clicked, removal requested for item id: {:?}", me);
         });
 
         s.on::<HomePageModeChanged>(me, on_mode_changed);
@@ -109,6 +113,9 @@ impl Widget for HomeItem {
         }
     }
 }
+
+pub(super) struct RemoveItemRequest(pub(super) Handle<HomeItem>);
+impl Event for RemoveItemRequest {}
 
 impl HomeItem {
     /// Check whether a window-local point lies inside the content, excluding

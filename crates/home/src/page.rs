@@ -91,10 +91,12 @@ impl Widget for HomePage {
         *s.component_mut::<Paint>(me).unwrap() = Paint::Quad(Quad::new(Color::BLACK));
 
         let long_press_timer = s.add_timeout(LONG_PRESS_DELAY, on_long_press_timeout);
+        // input handling
         s.on::<Press>(me, on_press)
             .on::<Release>(me, on_release)
             .on::<PressMoved>(me, on_press_moved)
-            .on::<PressCancelled>(me, on_press_cancelled);
+            .on::<PressCancelled>(me, on_press_cancelled)
+            .on::<RemoveItemRequest>(me, on_remove_item);
 
         // Spawn the background icon before items so their content draws above it.
         let logo = s
@@ -442,6 +444,35 @@ fn finish_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, commit: bool
         "Finished dragging item {}: committed={accepted}",
         drag.item_index
     );
+}
+
+fn on_remove_item(ctx: &mut Context<'_, HomePage>, e: &RemoveItemRequest) {
+    // an on going drag relies on indicies being stable. Don't remove while a drag is on going
+    // This could happen if you're dragging with one finger and use another
+    // finger to hit the X button
+    let page = ctx.me();
+    if page.drag.is_some() {
+        return;
+    }
+
+    // find handle. There could be a scheduling issue, so this might already
+    // have been removed, hence the let Some()
+    let Some(index) = page.items.iter().position(|&item| item == e.0) else {
+        return;
+    };
+
+    ctx.me().items.remove(index);
+    ctx.remove(e.0);
+    tracing::info!("Removed item {index}");
+
+    // rebuild occupancy
+    let items: Vec<_> = ctx.me().items.clone();
+    let placements: Vec<Placement> = items
+        .iter()
+        .map(|&item| ctx.widget::<HomeItem>(item).unwrap().placement)
+        .collect();
+
+    ctx.me().occupancy = grid::occupancy(&placements).expect("removal keeps a valid grid");
 }
 
 /// Tree edits require App rather than Context. Keep the same item nodes and
