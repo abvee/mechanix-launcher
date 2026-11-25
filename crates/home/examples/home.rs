@@ -10,7 +10,7 @@
 //! Hold an item for 250 ms to enter Edit mode, then drag without lifting.
 //! In Edit mode, grab items directly. Neighbours rearrange as you drag.
 //! Release to snap to the preview; long-press empty space to leave Edit mode.
-//! Edit mode shows decorative × badges; removal is not wired up yet.
+//! Edit mode shows a × button on each item; click it to remove that item.
 
 use home::HomeScreen;
 use mecha_wayland::mechanix_widgets::prelude::FontBook;

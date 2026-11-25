@@ -4,6 +4,8 @@
 //! index in the page's item vector. A centred SVG temporarily identifies the page.
 //! A drag changes wrapper styles immediately, but only commits placements and
 //! occupancy on release. Cancellation restores the original arrangement.
+//! A long press toggles Edit mode, where a press on an item grabs it directly
+//! and each item's × button requests its removal.
 
 use crate::grid::{self, GRID_COLUMNS, GRID_ROWS, Occupancy};
 use crate::items::*;
@@ -12,6 +14,7 @@ use std::time::Duration;
 
 /// Longer side of the page icon, in logical pixels.
 const LOGO_SIZE: u32 = 120;
+/// How long a press must stay within the slop before it toggles the page's mode.
 const LONG_PRESS_DELAY: Duration = Duration::from_millis(250);
 /// Maximum pending long-press movement, in logical pixels.
 const LONG_PRESS_SLOP: f32 = 5.0;
@@ -29,9 +32,13 @@ impl Build for HomePageBuilder {
     type Widget = HomePage;
 }
 
+/// How the page interprets presses. A long press toggles between them;
+/// each mode handles the same state differently.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub(super) enum PageMode {
+    /// Taps pass through to children; a long press enters Edit.
     Normal,
+    /// A press on an item's content grabs it directly; the × button is shown.
     Edit,
 }
 
@@ -39,7 +46,9 @@ pub(super) enum PageMode {
 pub(super) struct HomePageModeChanged(pub(super) PageMode);
 impl Event for HomePageModeChanged {}
 
+/// A pending or recognized mode-toggle press.
 struct LongPress {
+    /// The contact being tracked.
     contact: ContactId,
     /// Window-local position of the original press; deltas are measured from it.
     start_point: Point,
@@ -49,12 +58,17 @@ struct LongPress {
     claimed: bool,
 }
 
+/// An item drag in progress. Previews are not committed until release.
 struct ItemDrag {
+    /// The finger driving the drag.
     contact: ContactId,
+    /// Index into `items` of the dragged wrapper.
     item_index: usize,
     /// Where the finger grabbed the wrapper, relative to its top-left corner.
     grab_offset: Point,
+    /// Committed placements when the drag started; the rollback target.
     original: Vec<Placement>,
+    /// Grid anchor nearest the finger; rearrangement runs only when it changes.
     candidate: Placement,
     /// None means the current candidate cannot be arranged by our grid policy.
     preview: Option<Vec<Placement>>,
@@ -70,10 +84,14 @@ pub(crate) struct HomePage {
     /// Rebuild after adding, removing, reordering, or changing item placements.
     /// Every stored item index must fit in `u8`.
     occupancy: Occupancy,
+    /// Current mode. A long press toggles it; press handling differs per mode.
     mode: PageMode,
     /// Pending or recognized mode-toggle press; separate from item dragging.
     long_press: Option<LongPress>,
+    /// One-shot timer restarted for each eligible press; runs only while
+    /// `long_press` is `Some`.
     long_press_timer: TimerId,
+    /// The item drag in progress, if any.
     drag: Option<ItemDrag>,
 }
 impl Widget for HomePage {
@@ -184,6 +202,8 @@ fn item_style(placement: &Placement) -> LayoutStyle {
         )
 }
 
+/// In Edit mode, a press on an item's content claims the contact and starts
+/// a drag. Otherwise, track a possible long-press mode toggle.
 fn on_press(ctx: &mut Context<'_, HomePage>, e: &Press) {
     let page = ctx.me();
 
@@ -231,6 +251,8 @@ fn clear_long_press(ctx: &mut Context<'_, HomePage>, contact: ContactId) {
     ctx.cancel_timer(timer);
 }
 
+/// Finish any drag at the release position (committing its preview), then
+/// clear pending long-press state.
 fn on_release(ctx: &mut Context<'_, HomePage>, e: &Release) {
     // A release can carry a newer position than the last movement event.
     move_drag(ctx, e.contact, e.position);
@@ -238,11 +260,14 @@ fn on_release(ctx: &mut Context<'_, HomePage>, e: &Release) {
     clear_long_press(ctx, e.contact);
 }
 
+/// Roll back any drag, then clear pending long-press state.
 fn on_press_cancelled(ctx: &mut Context<'_, HomePage>, e: &PressCancelled) {
     finish_drag(ctx, e.contact, false);
     clear_long_press(ctx, e.contact);
 }
 
+/// Move an active drag. Otherwise, cancel a pending long press that moved
+/// beyond the slop; a recognized (claimed) press is left alone.
 fn on_press_moved(ctx: &mut Context<'_, HomePage>, e: &PressMoved) {
     if ctx.me().drag.is_some() {
         move_drag(ctx, e.contact, e.position);
@@ -271,6 +296,8 @@ fn on_press_moved(ctx: &mut Context<'_, HomePage>, e: &PressMoved) {
     }
 }
 
+/// Long-press recognition: claim the contact, toggle the mode, notify the
+/// items, and — when entering Edit — start dragging the pressed item.
 fn on_long_press_timeout(ctx: &mut Context<'_, HomePage>, _: &Timeout) {
     let timer = ctx.me().long_press_timer;
 
@@ -369,6 +396,9 @@ fn start_drag(
     tracing::info!("Started dragging item {item_index}");
 }
 
+/// Move the dragged wrapper to follow the finger. Recompute the candidate
+/// anchor and, when it changes, apply the rearrangement preview to the
+/// other wrappers. Nothing is committed here.
 fn move_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, position: Point) {
     let rect = ctx.component::<ComputedLayout>().unwrap().rect;
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
@@ -423,6 +453,8 @@ fn apply_layout(ctx: &mut Context<'_, HomePage>, placements: &[Placement], skip:
     }
 }
 
+/// End the matching drag: commit its preview on release, or restore the
+/// original arrangement on cancellation or an invalid drop.
 fn finish_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, commit: bool) {
     let Some(drag) = ctx.me().drag.take_if(|drag| drag.contact == contact) else {
         return;
@@ -446,6 +478,9 @@ fn finish_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, commit: bool
     );
 }
 
+/// Remove the requesting item: drop it from the list and the tree, then
+/// rebuild occupancy, whose indices shifted. Refused while a drag is
+/// running, and a no-op for an item that is already gone.
 fn on_remove_item(ctx: &mut Context<'_, HomePage>, e: &RemoveItemRequest) {
     // an on going drag relies on indicies being stable. Don't remove while a drag is on going
     // This could happen if you're dragging with one finger and use another

@@ -7,6 +7,7 @@ use mecha_wayland::prelude::*;
 
 use crate::page::{HomePageModeChanged, PageMode};
 
+/// Edge length of the × button, in logical pixels.
 const X_BUTTON_SIZE: f32 = 24.0;
 /// Minimum space around the square content, reserved for editing controls.
 const CONTENT_INSETS: f32 = 28.0;
@@ -33,6 +34,8 @@ pub struct Placement {
 /// spawned beneath it and manages its own internal layout. HomeItem assigns
 /// that child's outer geometry and owns the editing controls.
 pub(super) struct HomeItem {
+    /// Committed grid footprint. The page validates it and assigns the
+    /// wrapper's rectangle from it.
     pub(super) placement: Placement,
     /// Hidden until the page's mode-change handler shows it.
     pub(super) x_button: Handle<Button>,
@@ -41,9 +44,13 @@ pub(super) struct HomeItem {
     content: Handle<Div>,
 }
 
+/// Builds one item: its committed grid placement and the placeholder's label
+/// number. Removal identifies items by handle, not by this number.
 pub(super) struct HomeItemBuilder {
+    /// Committed grid footprint within the page.
     pub(super) placement: Placement,
-    pub(super) number: usize, // currently just used for placeholder, can potentially be used for fast lookup for removal.
+    /// Temporary: only names the placeholder card.
+    pub(super) number: usize,
 }
 
 impl Build for HomeItemBuilder {
@@ -80,12 +87,14 @@ impl Widget for HomeItem {
         // visibility
         *s.component_mut::<LayoutStyle>(x_button).unwrap() = LayoutStyle::default()
             .absolute()
+            // TODO: maybe force this to match widgets insets ? Will need to
+            // come inside OnChanged<ComputedLayout>
             .inset(Insets::new(px(0.0), px(0.0), auto(), auto()))
             .size(px(X_BUTTON_SIZE), px(X_BUTTON_SIZE))
             .display(Display::Hidden);
         s.on::<Press>(x_button, |ctx, e| {
             if ctx.claim_contact(e.contact) {
-                tracing::info!("(x) badge pressed: {:?}:", e.contact);
+                tracing::info!("(x) badge pressed: {:?}", e.contact);
             }
         })
         /*
@@ -114,6 +123,8 @@ impl Widget for HomeItem {
     }
 }
 
+/// An item's × button asked its owning page to remove it. The page owns the
+/// decision and all bookkeeping: the item list, occupancy, and the tree.
 pub(super) struct RemoveItemRequest(pub(super) Handle<HomeItem>);
 impl Event for RemoveItemRequest {}
 
@@ -160,6 +171,7 @@ fn spawn_placeholder<W: Widget>(
     card
 }
 
+/// Show the × button in Edit mode, hide it in Normal.
 fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
     let badge = ctx.me().x_button;
     ctx.at(badge)

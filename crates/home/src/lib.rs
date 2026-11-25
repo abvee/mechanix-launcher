@@ -9,6 +9,10 @@
 //! selects its direction; there is no additional distance or velocity threshold.
 //! Vertical gestures remain unclaimed here so other handlers, including shell
 //! navigation, can interpret them.
+//!
+//! Each page also holds a grid of item wrappers. A long press toggles the
+//! page's Edit mode: items then follow the finger with live rearrangement
+//! previews, and each item's × button requests its removal.
 
 use mecha_wayland::prelude::*;
 use screen::Screen;

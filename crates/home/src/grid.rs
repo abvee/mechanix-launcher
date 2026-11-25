@@ -5,7 +5,11 @@ use mecha_wayland::prelude::Size;
 
 /// Row-major page grid: four columns and eight rows.
 pub(super) const GRID_ROWS: usize = 8;
+/// Column count of the same row-major page grid; see [`GRID_ROWS`].
 pub(super) const GRID_COLUMNS: usize = 4;
+/// Row-major cell ownership: `None` is empty; `Some(index)` names an item in
+/// the owning page's `items` vector. A multi-cell item repeats its index
+/// across its footprint.
 pub(super) type Occupancy = [[Option<u8>; GRID_COLUMNS]; GRID_ROWS];
 
 fn in_bounds(p: Placement) -> bool {
