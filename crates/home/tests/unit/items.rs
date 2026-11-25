@@ -114,7 +114,7 @@ fn hiding_and_showing_the_wrapper_restores_the_square() {
 #[test]
 fn badge_visibility_changes_without_moving_or_resizing_the_content() {
     let mut ui = Ui::new();
-    let badge = ui.app.widget::<HomeItem>(ui.item).unwrap().edit_badge;
+    let badge = ui.app.widget::<HomeItem>(ui.item).unwrap().x_button;
     assert_eq!(
         ui.app.component::<LayoutStyle>(badge).unwrap().display,
         Display::Hidden
@@ -127,9 +127,9 @@ fn badge_visibility_changes_without_moving_or_resizing_the_content() {
         if mode == PageMode::Edit {
             assert_eq!(
                 (rect.width(), rect.height()),
-                (EDIT_BADGE_SIZE, EDIT_BADGE_SIZE)
+                (X_BUTTON_SIZE, X_BUTTON_SIZE)
             );
-            assert_eq!(rect.x(), 40.0 + 120.0 - EDIT_BADGE_SIZE);
+            assert_eq!(rect.x(), 40.0 + 120.0 - X_BUTTON_SIZE);
             assert_eq!(rect.y(), 60.0);
             let content = ui.app.widget::<HomeItem>(ui.item).unwrap().content;
             let content_rect = ui.app.component::<ComputedLayout>(content).unwrap().rect;

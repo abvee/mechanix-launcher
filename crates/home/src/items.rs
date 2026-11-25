@@ -7,7 +7,7 @@ use mecha_wayland::prelude::*;
 
 use crate::page::{HomePageModeChanged, PageMode};
 
-const EDIT_BADGE_SIZE: f32 = 24.0;
+const X_BUTTON_SIZE: f32 = 24.0;
 /// Minimum space around the square content, reserved for editing controls.
 const CONTENT_INSETS: f32 = 28.0;
 
@@ -35,7 +35,7 @@ pub struct Placement {
 pub(super) struct HomeItem {
     pub(super) placement: Placement,
     /// Hidden until the page's mode-change handler shows it.
-    pub(super) edit_badge: Handle<Button>,
+    pub(super) x_button: Handle<Button>,
 
     /// The actual widget child.
     content: Handle<Div>,
@@ -43,7 +43,7 @@ pub(super) struct HomeItem {
 
 pub(super) struct HomeItemBuilder {
     pub(super) placement: Placement,
-    pub(super) number: usize,
+    pub(super) number: usize, // currently just used for placeholder, can potentially be used for fast lookup for removal.
 }
 
 impl Build for HomeItemBuilder {
@@ -63,26 +63,40 @@ impl Widget for HomeItem {
             style.inset = Insets::all(px(CONTENT_INSETS));
         }
 
-        // Spawn after the card so the badge draws above its top-right corner.
-        // fixed
-        let edit_badge = s.spawn(
+        // Spawn after the card so the x button draws above its top-right
+        // corner.
+        let x_button = s.spawn(
             me,
             button()
                 .variant(ButtonVariant::Filled)
                 .size(ButtonSize::Small)
                 .label("×")
-                .radius(Corners::all(EDIT_BADGE_SIZE / 2.0))
+                .radius(Corners::all(X_BUTTON_SIZE / 2.0))
                 // inner native button fills out outer node
                 .style(LayoutStyle::default().fill().center()),
         );
 
         // position the X button wherever we want, we also control it's
         // visibility
-        *s.component_mut::<LayoutStyle>(edit_badge).unwrap() = LayoutStyle::default()
+        *s.component_mut::<LayoutStyle>(x_button).unwrap() = LayoutStyle::default()
             .absolute()
             .inset(Insets::new(px(0.0), px(0.0), auto(), auto()))
-            .size(px(EDIT_BADGE_SIZE), px(EDIT_BADGE_SIZE))
+            .size(px(X_BUTTON_SIZE), px(X_BUTTON_SIZE))
             .display(Display::Hidden);
+        s.on::<Press>(x_button, |ctx, e| {
+            if ctx.claim_contact(e.contact) {
+                tracing::info!("(x) badge pressed: {:?}:", e.contact);
+            }
+        })
+        /*
+        WARNING / TO FIX: If we ever change the way that Clicked works (only to
+        mouse and not released along side Release), this will need to be fixed.
+        Release, PressCancelled and PressMoved would have to be added OR
+        replace all interactivity events with a single Tap
+        */
+        .on::<Clicked>(x_button, |_, _| {
+            tracing::info!("X badge clicked, removal requested");
+        });
 
         s.on::<HomePageModeChanged>(me, on_mode_changed);
 
@@ -90,7 +104,7 @@ impl Widget for HomeItem {
         s.on::<OnChanged<ComputedLayout>>(me, on_layout_changed);
         HomeItem {
             placement: item.placement,
-            edit_badge,
+            x_button,
             content,
         }
     }
@@ -140,7 +154,7 @@ fn spawn_placeholder<W: Widget>(
 }
 
 fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
-    let badge = ctx.me().edit_badge;
+    let badge = ctx.me().x_button;
     ctx.at(badge)
         .unwrap()
         .component_mut::<LayoutStyle>()

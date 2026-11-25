@@ -206,7 +206,7 @@ impl Ui {
 
     fn assert_badges(&self, display: Display) {
         for &item in &self.page().items {
-            let badge = self.app.widget::<HomeItem>(item).unwrap().edit_badge;
+            let badge = self.app.widget::<HomeItem>(item).unwrap().x_button;
             assert_eq!(
                 self.app.component::<LayoutStyle>(badge).unwrap().display,
                 display
