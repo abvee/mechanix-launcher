@@ -11,6 +11,7 @@ use crate::page::{HomePageModeChanged, PageMode};
 const X_BUTTON_SIZE: f32 = 24.0;
 /// Minimum space around the square content, reserved for editing controls.
 const CONTENT_INSETS: f32 = 28.0;
+const RESIZE_HANDLE_SIZE: f32 = 24.0;
 
 /// An item's footprint in grid cells, independent of the page's pixel size.
 /// Coordinates are zero-based; spans must be nonzero and fit within the grid.
@@ -28,6 +29,15 @@ pub struct Placement {
     pub width: usize,
 }
 
+/// which edge we're dealing with
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub(super) enum HandleEdge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
 /// A wrapper holding an item's logical placement.
 ///
 /// The page assigns this node's position and size. Icon/widget content is
@@ -39,6 +49,10 @@ pub(super) struct HomeItem {
     pub(super) placement: Placement,
     /// Hidden until the page's mode-change handler shows it.
     pub(super) x_button: Handle<Button>,
+
+    /// Hidden until the page's mode-change handler shows it.
+    /// Ordering on the handles: Top, Bottom, Left, Right
+    pub(super) resize_handles: [Handle<Div>; 4],
 
     /// The actual widget child. `pub(super)` lets the page's tests locate
     /// the draggable content rect; production code uses
@@ -72,6 +86,7 @@ impl Widget for HomeItem {
             style.inset = Insets::all(px(CONTENT_INSETS));
         }
 
+        // ------- X Button ---------
         // Spawn after the card so the x button draws above its top-right
         // corner.
         let x_button = s.spawn(
@@ -113,6 +128,58 @@ impl Widget for HomeItem {
             tracing::info!("X button clicked, removal requested for item id: {:?}", me);
         });
 
+        // ------ Handle bars ---------
+        let resize_handles = [
+            // TODO: either do something about these insets of rely on on_layout_changed for exact matches
+            (
+                HandleEdge::Top,
+                Insets::new(px(0.0), auto(), auto(), percent(50.0)),
+            ),
+            (
+                HandleEdge::Bottom,
+                Insets::new(auto(), auto(), px(0.0), percent(50.0)),
+            ),
+            (
+                HandleEdge::Left,
+                Insets::new(percent(50.0), auto(), auto(), px(0.0)),
+            ),
+            (
+                HandleEdge::Right,
+                Insets::new(percent(50.0), px(0.0), auto(), auto()),
+            ),
+        ]
+        .map(|(edge, insets)| {
+            let bead = s.spawn(
+                me,
+                // we're using divs instead of buttons because unlike the X button,
+                // we don't want to claim any presses here. We send an event and
+                // let HomePage deal with the subsequent drag and resize.
+                div().style(
+                    LayoutStyle::default()
+                        .absolute()
+                        .inset(insets)
+                        .size(px(RESIZE_HANDLE_SIZE), px(RESIZE_HANDLE_SIZE))
+                        .display(Display::Hidden),
+                ),
+            );
+
+            *s.component_mut::<Paint>(bead).unwrap() = Paint::Quad(
+                Quad::new(s.color(ColorRole::Primary)).radius(RESIZE_HANDLE_SIZE / 2.0),
+            );
+
+            s.on::<Press>(bead, move |ctx, e| {
+                tracing::info!("Resize handle {:?} pressed: {:?}", edge, e.contact);
+                // we count on this to be sent and claimed before a long press ?
+                // TODO: maybe do something about this so that a lag in
+                // mecha-wayland doesn't change behaviour.
+                ctx.emit(
+                    ResizeItemRequest { item: me, edge },
+                    ctx.tree().parent(me).unwrap(),
+                );
+            });
+            bead
+        });
+
         s.on::<HomePageModeChanged>(me, on_mode_changed);
 
         // Only here to determine insets.
@@ -121,6 +188,7 @@ impl Widget for HomeItem {
             placement: item.placement,
             x_button,
             content,
+            resize_handles,
         }
     }
 }
@@ -129,6 +197,12 @@ impl Widget for HomeItem {
 /// decision and all bookkeeping: the item list, occupancy, and the tree.
 pub(super) struct RemoveItemRequest(pub(super) Handle<HomeItem>);
 impl Event for RemoveItemRequest {}
+
+pub(super) struct ResizeItemRequest {
+    pub(super) item: Handle<HomeItem>,
+    pub(super) edge: HandleEdge,
+}
+impl Event for ResizeItemRequest {}
 
 impl HomeItem {
     /// Check whether a window-local point lies inside the content, excluding
@@ -175,17 +249,26 @@ fn spawn_placeholder<W: Widget>(
 
 /// Show the × button in Edit mode, hide it in Normal.
 fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
-    let badge = ctx.me().x_button;
-    ctx.at(badge)
+    let (x_button, handle_beads) = { (ctx.me().x_button, ctx.me().resize_handles) };
+
+    let (x_button_display, handle_beads_display) = match e.0 {
+        PageMode::Normal => (Display::Hidden, Display::Hidden),
+        PageMode::Edit => (Display::Flex, Display::Hidden),
+        PageMode::Resize => (Display::Hidden, Display::Flex),
+    };
+
+    ctx.at(x_button)
         .unwrap()
         .component_mut::<LayoutStyle>()
         .unwrap()
-        .display = match e.0 {
-        PageMode::Normal => Display::Hidden,
-        PageMode::Edit => Display::Flex,
-        // X button should be hidden on resize. This will probably change
-        PageMode::Resize => Display::Hidden,
-    };
+        .display = x_button_display;
+    for &bead in &handle_beads {
+        ctx.at(bead)
+            .unwrap()
+            .component_mut::<LayoutStyle>()
+            .unwrap()
+            .display = handle_beads_display
+    }
 }
 
 // TODO: Replace this handler with declarative aspect-ratio sizing when

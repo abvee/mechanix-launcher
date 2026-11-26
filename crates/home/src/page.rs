@@ -181,6 +181,13 @@ impl Widget for HomePage {
         // TODO: REMOVE. Debug entry into Resize mode until the gesture is decided.
         let debug_button = builder.debug_items.then(|| spawn_debug_button(me, s));
 
+        s.on::<ResizeItemRequest>(me, |_ctx, e| {
+            tracing::info!(
+                "Resize requested for item: {:?} on edge: {:?}",
+                e.item.id(),
+                e.edge
+            )
+        });
         HomePage {
             items,
             occupancy,
