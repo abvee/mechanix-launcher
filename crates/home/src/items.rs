@@ -183,6 +183,8 @@ fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
         .display = match e.0 {
         PageMode::Normal => Display::Hidden,
         PageMode::Edit => Display::Flex,
+        // X button should be hidden on resize. This will probably change
+        PageMode::Resize => Display::Hidden,
     };
 }
 

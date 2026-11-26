@@ -40,6 +40,7 @@ pub(super) enum PageMode {
     Normal,
     /// A press on an item's content grabs it directly; the × button is shown.
     Edit,
+    Resize,
 }
 
 /// Emit to HomeItems whenever we change modes.
@@ -70,6 +71,8 @@ struct ItemDrag {
     original: Vec<Placement>,
     /// Grid anchor nearest the finger; rearrangement runs only when it changes.
     candidate: Placement,
+    /// None means the current candidate cannot be arranged by our grid policy.
+    preview: Option<Vec<Placement>>,
 }
 
 /// Page content: a background icon and items placed on a fixed grid.
@@ -344,6 +347,8 @@ fn on_long_press_timeout(ctx: &mut Context<'_, HomePage>, _: &Timeout) {
         match page.mode {
             PageMode::Normal => PageMode::Edit,
             PageMode::Edit => PageMode::Normal,
+            // placeholder decision. Real gesture decision comes later
+            PageMode::Resize => PageMode::Normal,
         }
     };
 
