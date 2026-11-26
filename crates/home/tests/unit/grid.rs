@@ -165,3 +165,144 @@ fn multi_cell_collision_clears_the_whole_neighbour_and_preserves_other_items() {
     assert_eq!(preview, [p(2, 1, 1, 1), p(2, 2, 2, 1), original[2]]);
     assert!(occupancy(&preview).is_some());
 }
+
+#[test]
+fn resize_candidate_snaps_each_edge_and_pins_its_opposite() {
+    // Spans columns 1..3 and rows 2..4: boundaries 1|3 horizontally, 2|4
+    // vertically. Cells are 120x100 at this page size.
+    let footprint = p(2, 1, 2, 2);
+    let size = Size::new(480.0, 800.0);
+
+    // Right: column and rows stay; the boundary snaps at halfway (420).
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Right, Point::new(419.0, 0.0), size),
+        footprint
+    );
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Right, Point::new(420.0, 0.0), size),
+        p(2, 1, 3, 2)
+    );
+
+    // Bottom: halfway between 400 and 500 is 450.
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Bottom, Point::new(0.0, 449.0), size),
+        footprint
+    );
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Bottom, Point::new(0.0, 450.0), size),
+        p(2, 1, 2, 3)
+    );
+
+    // Left: the right boundary stays pinned at 3; growing crosses below 60,
+    // and shrinking past 180 cuts a column off the left.
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Left, Point::new(61.0, 0.0), size),
+        footprint
+    );
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Left, Point::new(59.0, 0.0), size),
+        p(2, 0, 3, 2)
+    );
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Left, Point::new(180.0, 0.0), size),
+        p(2, 2, 1, 2)
+    );
+
+    // Top: the bottom boundary stays pinned at 4; growing crosses above
+    // halfway (150), shrinking past 250 cuts a row off the top.
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Top, Point::new(0.0, 151.0), size),
+        footprint
+    );
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Top, Point::new(0.0, 149.0), size),
+        p(1, 1, 2, 3)
+    );
+    assert_eq!(
+        resize_candidate(footprint, HandleEdge::Top, Point::new(0.0, 250.0), size),
+        p(3, 1, 2, 1)
+    );
+}
+
+#[test]
+fn resize_candidate_clamps_to_the_grid_and_a_one_cell_minimum() {
+    // p(0,0,2,2) in the top-left corner; p(6,2,2,2) in the bottom-right.
+    let corner = p(0, 0, 2, 2);
+    let floor = p(6, 2, 2, 2);
+    let size = Size::new(480.0, 800.0);
+
+    // Right never leaves the grid or drops below one column.
+    assert_eq!(
+        resize_candidate(floor, HandleEdge::Right, Point::new(1000.0, 0.0), size),
+        floor
+    );
+    assert_eq!(
+        resize_candidate(corner, HandleEdge::Right, Point::new(-1000.0, 0.0), size),
+        p(0, 0, 1, 2)
+    );
+
+    // Bottom never leaves the grid or drops below one row.
+    assert_eq!(
+        resize_candidate(floor, HandleEdge::Bottom, Point::new(0.0, 2000.0), size),
+        floor
+    );
+    assert_eq!(
+        resize_candidate(corner, HandleEdge::Bottom, Point::new(0.0, -1000.0), size),
+        p(0, 0, 2, 1)
+    );
+
+    // Left never crosses the grid's left edge or the pinned right boundary.
+    assert_eq!(
+        resize_candidate(corner, HandleEdge::Left, Point::new(-1000.0, 0.0), size),
+        corner
+    );
+    assert_eq!(
+        resize_candidate(floor, HandleEdge::Left, Point::new(1000.0, 0.0), size),
+        p(6, 3, 1, 2)
+    );
+
+    // Top never crosses the grid's top edge or the pinned bottom boundary.
+    assert_eq!(
+        resize_candidate(corner, HandleEdge::Top, Point::new(0.0, -1000.0), size),
+        corner
+    );
+    assert_eq!(
+        resize_candidate(floor, HandleEdge::Top, Point::new(0.0, 2000.0), size),
+        p(7, 2, 2, 1)
+    );
+}
+
+#[test]
+fn rearrange_accepts_a_resize_and_relocates_only_the_displaced() {
+    // Grow item 0 rightward and downward over the icon at (1, 3).
+    let original = [p(0, 0, 2, 2), p(1, 3, 1, 1)];
+    let target = p(0, 0, 4, 3);
+    let preview = rearrange(&original, 0, target).unwrap();
+    // The icon's nearest free home is (3, 3): everything nearer is covered.
+    assert_eq!(preview, [target, p(3, 3, 1, 1)]);
+    assert!(occupancy(&preview).is_some());
+}
+
+#[test]
+fn rearrange_rejects_a_resize_with_nowhere_to_go_but_always_fits_a_shrink() {
+    // Every cell occupied: the icons under a grown footprint have no free
+    // anchor anywhere, so the resize is rejected outright. A shrink frees
+    // cells and can displace nobody, so it always fits.
+    let mut placements = vec![p(0, 0, 2, 2)];
+    for row in 0..GRID_ROWS {
+        for column in 0..GRID_COLUMNS {
+            // Skip the 2x2's own cells (rows 0..2, columns 0..2).
+            if row < 2 && column < 2 {
+                continue;
+            }
+            placements.push(p(row, column, 1, 1));
+        }
+    }
+    assert!(occupancy(&placements).is_some());
+
+    assert!(rearrange(&placements, 0, p(0, 0, 3, 2)).is_none());
+
+    let preview = rearrange(&placements, 0, p(0, 0, 1, 1)).unwrap();
+    assert_eq!(preview[0], p(0, 0, 1, 1));
+    assert!(occupancy(&preview).is_some());
+}
