@@ -1,7 +1,7 @@
 //! Small, deterministic grid calculations. No widget state is changed here.
 
-use crate::items::Placement;
-use mecha_wayland::prelude::Size;
+use crate::items::{HandleEdge, Placement};
+use mecha_wayland::prelude::{Point, Size};
 
 /// Row-major page grid: four columns and eight rows.
 pub(super) const GRID_ROWS: usize = 8;
@@ -74,14 +74,81 @@ pub(super) fn candidate(footprint: Placement, left: f32, top: f32, size: Size) -
     }
 }
 
+/// The footprint the dragged edge snaps to: the page-local point defines one
+/// edge of the item, and the opposite edge stays pinned. Right and Bottom
+/// change only the span; Left and Top also move the anchor. Boundaries snap
+/// like `candidate` does — crossing at the halfway point, exact halves
+/// rounding upward — and the clamps keep the result a valid footprint, so
+/// this never fails.
+pub(super) fn resize_candidate(
+    footprint: Placement,
+    edge: HandleEdge,
+    point: Point,
+    size: Size,
+) -> Placement {
+    let cell_width = size.width / GRID_COLUMNS as f32;
+    let cell_height = size.height / GRID_ROWS as f32;
+
+    match edge {
+        // The pinned left edge keeps the column; the right boundary snaps.
+        HandleEdge::Right => {
+            let right = (point.x / cell_width)
+                .round()
+                .clamp(footprint.column as f32 + 1.0, GRID_COLUMNS as f32)
+                as usize;
+            Placement {
+                width: right - footprint.column,
+                ..footprint
+            }
+        }
+        // The pinned top edge keeps the row; the bottom boundary snaps.
+        HandleEdge::Bottom => {
+            let bottom = (point.y / cell_height)
+                .round()
+                .clamp(footprint.row as f32 + 1.0, GRID_ROWS as f32)
+                as usize;
+            Placement {
+                height: bottom - footprint.row,
+                ..footprint
+            }
+        }
+        // The right boundary stays pinned; the left edge snaps to it.
+        HandleEdge::Left => {
+            let pinned = footprint.column + footprint.width;
+            let left = (point.x / cell_width)
+                .round()
+                .clamp(0.0, (pinned - 1) as f32) as usize;
+            Placement {
+                column: left,
+                width: pinned - left,
+                ..footprint
+            }
+        }
+        // The bottom boundary stays pinned; the top edge snaps to it.
+        HandleEdge::Top => {
+            let pinned = footprint.row + footprint.height;
+            let top = (point.y / cell_height)
+                .round()
+                .clamp(0.0, (pinned - 1) as f32) as usize;
+            Placement {
+                row: top,
+                height: pinned - top,
+                ..footprint
+            }
+        }
+    }
+}
+
 /// Find displaced items through the candidate's occupied cells, leaving
 /// unaffected items in place. Relocate in row-major first-encounter order
 /// to the nearest free anchor (Manhattan
 /// distance from their original anchor; ties use row, then column).
 ///
-/// Always start from the committed arrangement: a preview never accumulates
-/// changes from earlier previews. This is a bounded greedy search, not a puzzle
-/// solver: no recursive pushing or backtracking if an item cannot fit.
+/// The candidate may differ from the dragged item's current size: a resize,
+/// not just a move. Always start from the committed arrangement: a preview
+/// never accumulates changes from earlier previews. This is a bounded greedy
+/// search, not a puzzle solver: no recursive pushing or backtracking if an
+/// item cannot fit.
 pub(super) fn rearrange(
     original: &[Placement],
     dragged: usize,
@@ -92,10 +159,10 @@ pub(super) fn rearrange(
     let mut cells = occupancy(original)?;
     let source = *original.get(dragged)?;
 
-    // Check if the target is valid and keeps the dragged item's size.
-    // Important cuz we will call clear() later and that expects valid
-    // placements; occupancy(original) already validated the source footprints.
-    if !in_bounds(target) || source.width != target.width || source.height != target.height {
+    // Check if the target is a valid footprint, any size. clear() below
+    // expects valid placements; occupancy(original) already validated the
+    // source footprints.
+    if !in_bounds(target) {
         return None;
     }
 

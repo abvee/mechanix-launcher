@@ -183,9 +183,10 @@ impl Widget for HomePage {
 
         s.on::<ResizeItemRequest>(me, |_ctx, e| {
             tracing::info!(
-                "Resize requested for item: {:?} on edge: {:?}",
+                "Resize requested for item: {:?} on edge: {:?} by contact {:?}",
                 e.item.id(),
-                e.edge
+                e.edge,
+                e.contact
             )
         });
         HomePage {
