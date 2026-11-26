@@ -178,7 +178,11 @@ impl Widget for HomeItem {
                 // always cancels the page's just-started long-press timer
                 // before it can expire.
                 ctx.emit(
-                    ResizeItemRequest { item: me, edge },
+                    ResizeItemRequest {
+                        item: me,
+                        edge,
+                        contact: e.contact,
+                    },
                     ctx.tree().parent(me).unwrap(),
                 );
             });
@@ -208,6 +212,7 @@ impl Event for RemoveItemRequest {}
 pub(super) struct ResizeItemRequest {
     pub(super) item: Handle<HomeItem>,
     pub(super) edge: HandleEdge,
+    pub(super) contact: ContactId,
 }
 impl Event for ResizeItemRequest {}
 
