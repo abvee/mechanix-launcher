@@ -11,6 +11,7 @@ use crate::page::{HomePageModeChanged, PageMode};
 const X_BUTTON_SIZE: f32 = 24.0;
 /// Minimum space around the square content, reserved for editing controls.
 const CONTENT_INSETS: f32 = 28.0;
+/// Edge length of a resize-handle bead, in logical pixels.
 const RESIZE_HANDLE_SIZE: f32 = 24.0;
 
 /// An item's footprint in grid cells, independent of the page's pixel size.
@@ -29,7 +30,7 @@ pub struct Placement {
     pub width: usize,
 }
 
-/// which edge we're dealing with
+/// Which wrapper edge a resize handle drags.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub(super) enum HandleEdge {
     Top,
@@ -129,8 +130,9 @@ impl Widget for HomeItem {
         });
 
         // ------ Handle bars ---------
+        // Each bead anchors at its edge's midpoint (percent(50)) and hangs
+        // half a bead toward the inside of the wrapper.
         let resize_handles = [
-            // TODO: either do something about these insets of rely on on_layout_changed for exact matches
             (
                 HandleEdge::Top,
                 Insets::new(px(0.0), auto(), auto(), percent(50.0)),
@@ -169,9 +171,12 @@ impl Widget for HomeItem {
 
             s.on::<Press>(bead, move |ctx, e| {
                 tracing::info!("Resize handle {:?} pressed: {:?}", edge, e.contact);
-                // we count on this to be sent and claimed before a long press ?
-                // TODO: maybe do something about this so that a lag in
-                // mecha-wayland doesn't change behaviour.
+                // No claim here, and that is safe: the page claims from its
+                // ResizeItemRequest handler, which runs in the SAME flush as
+                // this press. Timers fire only from ring events between
+                // ticks, never mid-flush, so the claim's PressCancelled
+                // always cancels the page's just-started long-press timer
+                // before it can expire.
                 ctx.emit(
                     ResizeItemRequest { item: me, edge },
                     ctx.tree().parent(me).unwrap(),
@@ -198,6 +203,8 @@ impl Widget for HomeItem {
 pub(super) struct RemoveItemRequest(pub(super) Handle<HomeItem>);
 impl Event for RemoveItemRequest {}
 
+/// A resize handle was pressed on this item's `edge`. Like the × request,
+/// the page owns what follows: it claims the contact and drives the resize.
 pub(super) struct ResizeItemRequest {
     pub(super) item: Handle<HomeItem>,
     pub(super) edge: HandleEdge,
@@ -247,7 +254,8 @@ fn spawn_placeholder<W: Widget>(
     card
 }
 
-/// Show the × button in Edit mode, hide it in Normal.
+/// React to the page's mode: show the × in Edit, the resize handles in
+/// Resize, and hide both in Normal.
 fn on_mode_changed(ctx: &mut Context<'_, HomeItem>, e: &HomePageModeChanged) {
     let (x_button, handle_beads) = { (ctx.me().x_button, ctx.me().resize_handles) };
 
