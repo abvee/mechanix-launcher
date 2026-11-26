@@ -70,8 +70,6 @@ struct ItemDrag {
     original: Vec<Placement>,
     /// Grid anchor nearest the finger; rearrangement runs only when it changes.
     candidate: Placement,
-    /// None means the current candidate cannot be arranged by our grid policy.
-    preview: Option<Vec<Placement>>,
 }
 
 /// Page content: a background icon and items placed on a fixed grid.
@@ -296,6 +294,19 @@ fn on_press_moved(ctx: &mut Context<'_, HomePage>, e: &PressMoved) {
     }
 }
 
+// helper function: change the page's mode and notify items
+fn set_mode(ctx: &mut Context<'_, HomePage>, mode: PageMode) {
+    let page = ctx.me();
+    if page.mode == mode {
+        return;
+    }
+    page.mode = mode;
+    let targets: Vec<NodeId> = page.items.iter().map(|&item| item.id()).collect();
+    tracing::info!("Switching to mode: {:?}", mode);
+
+    ctx.emit(HomePageModeChanged(mode), targets);
+}
+
 /// Long-press recognition: claim the contact, toggle the mode, notify the
 /// items, and — when entering Edit — start dragging the pressed item.
 fn on_long_press_timeout(ctx: &mut Context<'_, HomePage>, _: &Timeout) {
@@ -327,19 +338,16 @@ fn on_long_press_timeout(ctx: &mut Context<'_, HomePage>, _: &Timeout) {
         return;
     }
 
-    let (mode, targets) = {
+    let mode = {
         let page = ctx.me();
         page.long_press.as_mut().unwrap().claimed = true;
-        page.mode = match page.mode {
+        match page.mode {
             PageMode::Normal => PageMode::Edit,
             PageMode::Edit => PageMode::Normal,
-        };
-        let targets: Vec<NodeId> = page.items.iter().map(|item| item.id()).collect();
-        tracing::info!("Long press done, switched mode to: {:?}", page.mode);
-        (page.mode, targets)
+        }
     };
 
-    ctx.emit(HomePageModeChanged(mode), targets);
+    set_mode(ctx, mode);
 
     // you should be able to start dragging in the same long press
     if mode == PageMode::Edit {
