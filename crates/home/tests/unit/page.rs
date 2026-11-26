@@ -239,6 +239,19 @@ impl Ui {
         self.center_of(button)
     }
 
+    /// Synthesize a click on the debug Resize-mode toggle.
+    fn click_debug_button(&mut self) {
+        let button = self.page().debug_button.expect("the debug page has one");
+        self.app.emit(
+            Clicked {
+                contact: ContactId::Touch(0),
+                position: Point::new(56.0, 844.0),
+            },
+            button,
+        );
+        self.app.tick();
+    }
+
     fn assert_badges(&self, display: Display) {
         for &item in &self.page().items {
             let badge = self.app.widget::<HomeItem>(item).unwrap().x_button;
@@ -510,6 +523,28 @@ fn stale_timeout_during_restarted_countdown_is_ignored() {
     ui.timeout();
     assert_eq!(ui.page().mode, PageMode::Edit);
     assert!(ui.page().drag.is_some());
+}
+
+#[test]
+fn debug_button_toggles_resize_mode_and_hides_x_buttons() {
+    let mut ui = Ui::new();
+    ui.assert_badges(Display::Hidden);
+
+    // Enter Resize via the debug button: the × stays hidden.
+    ui.click_debug_button();
+    assert_eq!(ui.page().mode, PageMode::Resize);
+    ui.assert_badges(Display::Hidden);
+
+    // The placeholder exit: a long press returns the page to Normal.
+    ui.press(300.0, 100.0);
+    ui.timeout();
+    assert_eq!(ui.page().mode, PageMode::Normal);
+
+    // The toggle's other direction: click enters, click leaves.
+    ui.click_debug_button();
+    assert_eq!(ui.page().mode, PageMode::Resize);
+    ui.click_debug_button();
+    assert_eq!(ui.page().mode, PageMode::Normal);
 }
 
 #[test]

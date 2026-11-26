@@ -40,6 +40,8 @@ pub(super) enum PageMode {
     Normal,
     /// A press on an item's content grabs it directly; the × button is shown.
     Edit,
+    /// Only resize handles do anything; the × is hidden. The debug button
+    /// toggles in and out until the real gesture exists.
     Resize,
 }
 
@@ -94,6 +96,11 @@ pub(crate) struct HomePage {
     long_press_timer: TimerId,
     /// The item drag in progress, if any.
     drag: Option<ItemDrag>,
+    /// Debug-only toggle into Resize mode; `None` on real pages. Read by
+    /// the tests only, hence the allow.
+    // TODO: REMOVE with the real resize entry gesture.
+    #[allow(dead_code)]
+    debug_button: Option<Handle<Div>>,
 }
 impl Widget for HomePage {
     type Builder = HomePageBuilder;
@@ -171,6 +178,9 @@ impl Widget for HomePage {
             items.push(item);
         }
 
+        // TODO: REMOVE. Debug entry into Resize mode until the gesture is decided.
+        let debug_button = builder.debug_items.then(|| spawn_debug_button(me, s));
+
         HomePage {
             items,
             occupancy,
@@ -178,6 +188,7 @@ impl Widget for HomePage {
             long_press: None,
             long_press_timer,
             drag: None,
+            debug_button,
         }
     }
 }
@@ -543,6 +554,47 @@ pub(super) fn raise_item(app: &mut App, e: &RaiseItem) {
     let parent = app.parent(e.page).unwrap();
     app.move_to(e.item, parent);
     app.move_to(e.item, e.page);
+}
+
+// ── debug: resize-mode entry ─────────────────────────────────────────
+// TODO: REMOVE. Temporary stand-in for the real resize-mode entry gesture,
+// so the resize pipeline can be built and tested ahead of the gesture
+// design. Only spawns on debug pages.
+
+/// Edge of the debug button, in logical pixels.
+const DEBUG_BUTTON_SIZE: f32 = 32.0;
+
+/// Spawn the debug button: a red square in the page's bottom-left corner
+/// whose click toggles Resize mode. TODO: REMOVE with the real gesture.
+fn spawn_debug_button(me: Handle<HomePage>, s: &mut Spawner<'_, HomePage>) -> Handle<Div> {
+    let button = s.spawn(
+        me,
+        div().style(
+            LayoutStyle::default()
+                .absolute()
+                .inset(Insets::new(auto(), auto(), px(0.0), px(0.0)))
+                .size(px(DEBUG_BUTTON_SIZE), px(DEBUG_BUTTON_SIZE)),
+        ),
+    );
+    // Error colour so it is unmistakably not a real widget.
+    *s.component_mut::<Paint>(button).unwrap() = Paint::Quad(Quad::new(s.color(ColorRole::Error)));
+
+    s.on::<Press>(button, |ctx, e| {
+        // Claim like the ×: holding this button must never become a page
+        // long-press that flips modes underneath us.
+        ctx.claim_contact(e.contact);
+    })
+    .on::<Clicked>(button, |ctx, _| {
+        // Toggle into Resize and back out; set_mode notifies the items.
+        let mode = if ctx.me().mode == PageMode::Resize {
+            PageMode::Normal
+        } else {
+            PageMode::Resize
+        };
+        set_mode(ctx, mode);
+    });
+
+    button
 }
 
 #[cfg(test)]
