@@ -61,17 +61,34 @@ struct LongPress {
     claimed: bool,
 }
 
+/// What the claimed contact is doing to the dragged item. Picks the
+/// candidate formula and which styling path the dragged wrapper takes.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum DragKind {
+    /// The wrapper follows the finger in pixels; the candidate is the
+    /// nearest anchor for its unchanged footprint.
+    Move,
+    /// One edge follows the finger; the candidate is the new footprint and
+    /// the wrapper stays grid-snapped while it grows or shrinks.
+    Resize(HandleEdge),
+}
+
 /// An item drag in progress. Previews are not committed until release.
 struct ItemDrag {
     /// The finger driving the drag.
     contact: ContactId,
+    /// What that finger is doing: moving or resizing.
+    kind: DragKind,
     /// Index into `items` of the dragged wrapper.
     item_index: usize,
-    /// Where the finger grabbed the wrapper, relative to its top-left corner.
+    /// Where the finger grabbed, relative to the dragged reference: a
+    /// Move's wrapper corner, or a Resize's current boundary. Either way
+    /// the reference then follows the finger's exact delta.
     grab_offset: Point,
     /// Committed placements when the drag started; the rollback target.
     original: Vec<Placement>,
-    /// Grid anchor nearest the finger; rearrangement runs only when it changes.
+    /// The placement the item would get if released now. Rearrangement runs
+    /// only when it changes.
     candidate: Placement,
     /// None means the current candidate cannot be arranged by our grid policy.
     preview: Option<Vec<Placement>>,
@@ -122,7 +139,8 @@ impl Widget for HomePage {
             .on::<Release>(me, on_release)
             .on::<PressMoved>(me, on_press_moved)
             .on::<PressCancelled>(me, on_press_cancelled)
-            .on::<RemoveItemRequest>(me, on_remove_item);
+            .on::<RemoveItemRequest>(me, on_remove_item)
+            .on::<ResizeItemRequest>(me, on_resize_item_request);
 
         // Spawn the background icon before items so their content draws above it.
         let logo = s
@@ -181,14 +199,6 @@ impl Widget for HomePage {
         // TODO: REMOVE. Debug entry into Resize mode until the gesture is decided.
         let debug_button = builder.debug_items.then(|| spawn_debug_button(me, s));
 
-        s.on::<ResizeItemRequest>(me, |_ctx, e| {
-            tracing::info!(
-                "Resize requested for item: {:?} on edge: {:?} by contact {:?}",
-                e.item.id(),
-                e.edge,
-                e.contact
-            )
-        });
         HomePage {
             items,
             occupancy,
@@ -412,6 +422,7 @@ fn start_drag(
         .collect();
     ctx.me().drag = Some(ItemDrag {
         contact,
+        kind: DragKind::Move,
         item_index,
         grab_offset: Point::new(press.x - rect.x(), press.y - rect.y()),
         candidate: original[item_index],
@@ -428,9 +439,11 @@ fn start_drag(
     tracing::info!("Started dragging item {item_index}");
 }
 
-/// Move the dragged wrapper to follow the finger. Recompute the candidate
-/// anchor and, when it changes, apply the rearrangement preview to the
-/// other wrappers. Nothing is committed here.
+/// Drive the active drag from a finger position: recompute the candidate
+/// and, when it changes, refresh the preview and the styles it implies.
+/// Nothing is committed here — `finish_drag` does that on release. A Move
+/// wrapper follows the finger in pixels; a Resize wrapper stays
+/// grid-snapped while its edge snaps to cell boundaries.
 fn move_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, position: Point) {
     let rect = ctx.component::<ComputedLayout>().unwrap().rect;
     if rect.width() <= 0.0 || rect.height() <= 0.0 {
@@ -442,30 +455,68 @@ fn move_drag(ctx: &mut Context<'_, HomePage>, contact: ContactId, position: Poin
     };
     let size = Size::new(rect.width(), rect.height());
     let footprint = drag.original[drag.item_index];
-    let width = size.width * footprint.width as f32 / GRID_COLUMNS as f32;
-    let height = size.height * footprint.height as f32 / GRID_ROWS as f32;
-    let left = (position.x - rect.x() - drag.grab_offset.x).clamp(0.0, size.width - width);
-    let top = (position.y - rect.y() - drag.grab_offset.y).clamp(0.0, size.height - height);
-    let candidate = grid::candidate(footprint, left, top, size);
+    // Finger position in page-local coordinates.
+    let point = Point::new(position.x - rect.x(), position.y - rect.y());
+
+    // The candidate: where the item would land if released now. A Move
+    // keeps its size and rounds the nearest anchor; a Resize keeps its
+    // pinned edge and rounds the dragged boundary, offset by where the
+    // finger grabbed it.
+    let (candidate, pixel_inset) = match drag.kind {
+        DragKind::Move => {
+            let width = size.width * footprint.width as f32 / GRID_COLUMNS as f32;
+            let height = size.height * footprint.height as f32 / GRID_ROWS as f32;
+            let left = (point.x - drag.grab_offset.x).clamp(0.0, size.width - width);
+            let top = (point.y - drag.grab_offset.y).clamp(0.0, size.height - height);
+            (
+                grid::candidate(footprint, left, top, size),
+                // A Move wrapper follows the finger in pixels.
+                Some(Insets::new(px(top), auto(), auto(), px(left))),
+            )
+        }
+        DragKind::Resize(edge) => {
+            // The dragged boundary, following the finger's exact delta.
+            let boundary = Point::new(point.x - drag.grab_offset.x, point.y - drag.grab_offset.y);
+            (
+                grid::resize_candidate(footprint, edge, boundary, size),
+                None,
+            )
+        }
+    };
+
     let changed = candidate != drag.candidate;
     if changed {
         drag.candidate = candidate;
-        drag.preview = grid::rearrange(&drag.original, drag.item_index, candidate);
+        // A single-edge shrink always fits: the new footprint lies inside
+        // the old one, and freed cells displace nobody. Skip the search.
+        drag.preview = if matches!(drag.kind, DragKind::Resize(_))
+            && candidate.width * candidate.height < footprint.width * footprint.height
+        {
+            let mut placements = drag.original.clone();
+            placements[drag.item_index] = candidate;
+            Some(placements)
+        } else {
+            grid::rearrange(&drag.original, drag.item_index, candidate)
+        };
     }
     let index = drag.item_index;
     let item = page.items[index];
 
     if changed {
-        // Invalid candidate? Show the original neighbours, not a stale preview.
+        // Invalid candidate? Show the original arrangement, not a stale
+        // preview. A Move skips its dragged wrapper (the finger owns it);
+        // a Resize styles it too, so an impossible grow snaps it home.
         let drag = ctx.me().drag.as_ref().unwrap();
         let placements = drag.preview.as_ref().unwrap_or(&drag.original).clone();
-        apply_layout(ctx, &placements, Some(index));
+        let skip = (drag.kind == DragKind::Move).then_some(index);
+        apply_layout(ctx, &placements, skip);
     }
 
-    // Only the dragged wrapper has pixel offsets; its size stays percentage-based.
-    let mut item_ctx = ctx.at(item).unwrap();
-    item_ctx.component_mut::<LayoutStyle>().unwrap().inset =
-        Insets::new(px(top), auto(), auto(), px(left));
+    if let Some(inset) = pixel_inset {
+        // Only a Move wrapper has pixel offsets; its size stays percentage-based.
+        let mut item_ctx = ctx.at(item).unwrap();
+        item_ctx.component_mut::<LayoutStyle>().unwrap().inset = inset;
+    }
 }
 
 /// Apply a preview to existing wrappers. The dragged wrapper follows the finger.
@@ -540,6 +591,76 @@ fn on_remove_item(ctx: &mut Context<'_, HomePage>, e: &RemoveItemRequest) {
         .collect();
 
     ctx.me().occupancy = grid::occupancy(&placements).expect("removal keeps a valid grid");
+}
+
+/// Start a resize from a pressed handle bead: claim the contact so the
+/// move and release stream routes to the page, then build the drag state.
+/// The candidate starts at the item's own footprint — the bead sits on its
+/// current edge — so nothing moves until the finger drags a boundary.
+fn on_resize_item_request(ctx: &mut Context<'_, HomePage>, e: &ResizeItemRequest) {
+    let index = {
+        let page = ctx.me();
+        // Only Resize mode resizes: a queued request can race a mode flip
+        // delivered earlier in the same flush.
+        if page.mode != PageMode::Resize || page.drag.is_some() {
+            return;
+        }
+        // Locate by handle; a stale request is a no-op.
+        page.items.iter().position(|&item| item == e.item)
+    };
+    let Some(index) = index else {
+        return;
+    };
+    // Claim: the page drives the whole resize now. A claim cancels the
+    // press bookkeeping of everyone ELSE in the capture; as the claimer,
+    // the page clears its own pending long press itself, right here —
+    // otherwise its timer could still fire and flip modes mid-resize.
+    if !ctx.claim_contact(e.contact) {
+        return;
+    }
+    clear_long_press(ctx, e.contact);
+
+    let rect = ctx.component::<ComputedLayout>().unwrap().rect;
+    if rect.width() <= 0.0 || rect.height() <= 0.0 {
+        return;
+    }
+    let size = Size::new(rect.width(), rect.height());
+    let footprint = ctx.widget::<HomeItem>(e.item).unwrap().placement;
+
+    // The finger grabbed the bead NEAR the dragged boundary, not on it.
+    // Remember that gap — the Move's grab-offset trick — so the boundary
+    // stays exactly where it is until the finger actually moves it.
+    let cell_width = size.width / GRID_COLUMNS as f32;
+    let cell_height = size.height / GRID_ROWS as f32;
+    let boundary = match e.edge {
+        HandleEdge::Right => Point::new(
+            (footprint.column + footprint.width) as f32 * cell_width,
+            0.0,
+        ),
+        HandleEdge::Left => Point::new(footprint.column as f32 * cell_width, 0.0),
+        HandleEdge::Bottom => {
+            Point::new(0.0, (footprint.row + footprint.height) as f32 * cell_height)
+        }
+        HandleEdge::Top => Point::new(0.0, footprint.row as f32 * cell_height),
+    };
+    let press = Point::new(e.point.x - rect.x(), e.point.y - rect.y());
+    let grab_offset = Point::new(press.x - boundary.x, press.y - boundary.y);
+
+    let items = ctx.me().items.clone();
+    let original: Vec<Placement> = items
+        .iter()
+        .map(|&item| ctx.widget::<HomeItem>(item).unwrap().placement)
+        .collect();
+    ctx.me().drag = Some(ItemDrag {
+        contact: e.contact,
+        kind: DragKind::Resize(e.edge),
+        item_index: index,
+        grab_offset,
+        candidate: footprint,
+        preview: Some(original.clone()),
+        original,
+    });
+    tracing::info!("Started resizing item {index} from edge {:?}", e.edge);
 }
 
 /// Tree edits require App rather than Context. Keep the same item nodes and

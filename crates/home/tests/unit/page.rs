@@ -252,6 +252,39 @@ impl Ui {
         self.app.tick();
     }
 
+    /// Page-local centre of an item's handle bead; laid out only in Resize
+    /// mode. The array order matches `HandleEdge`'s declaration order.
+    fn bead_center(&self, index: usize, edge: HandleEdge) -> (f32, f32) {
+        let item = self
+            .app
+            .widget::<HomeItem>(self.page().items[index])
+            .unwrap();
+        self.center_of(item.resize_handles[edge as usize])
+    }
+
+    /// Spawn a debug icon at `placement`, register it with the page, and
+    /// settle its layout. Returns its index in `items`.
+    fn add_icon(&mut self, placement: Placement) -> usize {
+        let number = self.page().items.len() + 1;
+        let item = self
+            .app
+            .spawn(self.page, HomeItemBuilder { placement, number });
+        *self.app.component_mut::<LayoutStyle>(item).unwrap() = item_style(&placement);
+        self.app
+            .widget_mut::<HomePage>(self.page)
+            .unwrap()
+            .items
+            .push(item);
+        let index = self.page().items.len() - 1;
+        let original = self.placements();
+        self.app
+            .widget_mut::<HomePage>(self.page)
+            .unwrap()
+            .occupancy = grid::occupancy(&original).unwrap();
+        self.app.tick();
+        index
+    }
+
     fn assert_badges(&self, display: Display) {
         for &item in &self.page().items {
             let badge = self.app.widget::<HomeItem>(item).unwrap().x_button;
@@ -604,4 +637,165 @@ fn removal_request_during_a_drag_is_refused() {
     ui.input(0, ContactPhase::Released, press.0, press.1);
     assert!(ui.page().drag.is_none());
     ui.assert_grid_layout(&original);
+}
+
+#[test]
+fn right_handle_grow_snaps_by_cell_and_commits_on_release() {
+    let mut ui = Ui::new();
+    ui.click_debug_button();
+    assert_eq!(ui.page().mode, PageMode::Resize);
+
+    let original = ui.placements();
+    let press = ui.bead_center(0, HandleEdge::Right);
+    ui.press(press.0, press.1);
+    assert!(ui.page().drag.is_some());
+    // The claim routed the press to the page: no mode flip, no long press.
+    assert_eq!(ui.page().mode, PageMode::Resize);
+    assert!(ui.page().long_press.is_none());
+
+    // Drag the right edge one full cell: the boundary snaps to width 3.
+    ui.input(0, ContactPhase::Moved, press.0 + 120.0, press.1);
+    let preview = ui.page().drag.as_ref().unwrap().preview.clone().unwrap();
+    assert_eq!(
+        (preview[0].width, preview[0].column, preview[0].row),
+        (3, 0, 0)
+    );
+    // The wrapper grew grid-snapped, live, before any release.
+    assert_eq!((ui.rect(0).width(), ui.rect(0).height()), (360.0, 200.0));
+    // Nothing is committed while the finger is down.
+    assert_eq!(ui.placements(), original);
+
+    // A wiggle inside the same boundary changes nothing.
+    ui.input(0, ContactPhase::Moved, press.0 + 130.0, press.1);
+    assert_eq!(
+        ui.page().drag.as_ref().unwrap().preview.as_ref().unwrap(),
+        &preview
+    );
+
+    ui.input(0, ContactPhase::Released, press.0 + 130.0, press.1);
+    assert!(ui.page().drag.is_none());
+    assert_eq!(ui.page().mode, PageMode::Resize);
+    ui.assert_grid_layout(&preview);
+}
+
+#[test]
+fn right_handle_shrink_fits_without_moving_anyone() {
+    let mut ui = Ui::new();
+    // An icon directly under item 0's left column: a shrink must leave it
+    // exactly where it is.
+    let icon = ui.add_icon(Placement {
+        row: 2,
+        column: 0,
+        width: 1,
+        height: 1,
+    });
+    ui.click_debug_button();
+
+    let press = ui.bead_center(0, HandleEdge::Right);
+    ui.press(press.0, press.1);
+    // Drag the right edge one full cell inward: width 2 -> 1.
+    ui.input(0, ContactPhase::Moved, press.0 - 120.0, press.1);
+    let preview = ui.page().drag.as_ref().unwrap().preview.clone().unwrap();
+    assert_eq!((preview[0].width, preview[0].column), (1, 0));
+    // The freed cells displaced nobody: the icon keeps its placement and
+    // its on-screen rect, while the wrapper shrinks live.
+    assert_eq!(preview[icon], ui.placements()[icon]);
+    assert_eq!((ui.rect(icon).x(), ui.rect(icon).y()), (40.0, 260.0));
+    assert_eq!(ui.rect(0).width(), 120.0);
+
+    ui.input(0, ContactPhase::Released, press.0 - 120.0, press.1);
+    ui.assert_grid_layout(&preview);
+}
+
+#[test]
+fn left_handle_grow_moves_the_anchor_and_displaces_live() {
+    let mut ui = Ui::new();
+    // An icon beside item 1: growing leftward covers it.
+    let icon = ui.add_icon(Placement {
+        row: 3,
+        column: 2,
+        width: 1,
+        height: 1,
+    });
+    ui.click_debug_button();
+
+    let press = ui.bead_center(1, HandleEdge::Left);
+    ui.press(press.0, press.1);
+    // Two cells left: the left edge snaps to column 1, the pinned right
+    // edge turns the span into 3 columns.
+    ui.input(0, ContactPhase::Moved, press.0 - 240.0, press.1);
+    let preview = ui.page().drag.as_ref().unwrap().preview.clone().unwrap();
+    assert_eq!(
+        (preview[1].column, preview[1].width, preview[1].row),
+        (1, 3, 3)
+    );
+    // The displaced icon relocated to its nearest free cell, visibly,
+    // BEFORE any release.
+    assert_eq!((preview[icon].row, preview[icon].column), (2, 2));
+    assert_eq!((ui.rect(icon).x(), ui.rect(icon).y()), (280.0, 260.0));
+
+    ui.input(0, ContactPhase::Released, press.0 - 240.0, press.1);
+    assert!(ui.page().drag.is_none());
+    ui.assert_grid_layout(&preview);
+}
+
+#[test]
+fn impossible_grow_snaps_home_and_rolls_back() {
+    let mut ui = Ui::new();
+    // Fill every empty cell: whatever the grow covers has nowhere to go.
+    for row in 0..GRID_ROWS {
+        for column in 0..GRID_COLUMNS {
+            if ui.page().occupancy[row][column].is_some() {
+                continue;
+            }
+            ui.add_icon(Placement {
+                row,
+                column,
+                width: 1,
+                height: 1,
+            });
+        }
+    }
+    let original = ui.placements();
+    ui.click_debug_button();
+
+    let press = ui.bead_center(0, HandleEdge::Bottom);
+    ui.press(press.0, press.1);
+    // Grow downward: the icons under the new row cannot be relocated.
+    ui.input(0, ContactPhase::Moved, press.0, press.1 + 120.0);
+    assert!(ui.page().drag.as_ref().unwrap().preview.is_none());
+    // The wrapper refused to grow: it snapped back to its committed rect.
+    assert_eq!((ui.rect(0).x(), ui.rect(0).y()), (40.0, 60.0));
+
+    ui.input(0, ContactPhase::Released, press.0, press.1 + 120.0);
+    assert!(ui.page().drag.is_none());
+    assert_eq!(ui.page().mode, PageMode::Resize);
+    ui.assert_grid_layout(&original);
+}
+
+#[test]
+fn holding_a_bead_never_triggers_the_mode_toggle() {
+    let mut ui = Ui::new();
+    ui.click_debug_button();
+    let press = ui.bead_center(0, HandleEdge::Right);
+    ui.press(press.0, press.1);
+
+    // The claim's PressCancelled, in the same flush, already cancelled the
+    // long press the page's on_press started: no timer runs.
+    assert!(ui.page().drag.is_some());
+    assert!(ui.page().long_press.is_none());
+    assert!(
+        !ui.app
+            .resource::<Timers>()
+            .is_running(ui.page().long_press_timer)
+    );
+
+    // A timeout landing now changes nothing: there is no pending press.
+    ui.timeout();
+    assert_eq!(ui.page().mode, PageMode::Resize);
+    assert!(ui.page().drag.is_some());
+
+    ui.input(0, ContactPhase::Released, press.0, press.1);
+    assert!(ui.page().drag.is_none());
+    assert_eq!(ui.page().mode, PageMode::Resize);
 }

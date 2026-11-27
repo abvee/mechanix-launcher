@@ -171,17 +171,17 @@ impl Widget for HomeItem {
 
             s.on::<Press>(bead, move |ctx, e| {
                 tracing::info!("Resize handle {:?} pressed: {:?}", edge, e.contact);
-                // No claim here, and that is safe: the page claims from its
-                // ResizeItemRequest handler, which runs in the SAME flush as
-                // this press. Timers fire only from ring events between
-                // ticks, never mid-flush, so the claim's PressCancelled
-                // always cancels the page's just-started long-press timer
-                // before it can expire.
+                // No claim here — the page claims from its ResizeItemRequest
+                // handler, which runs in the SAME flush as this press. Timers
+                // fire only from ring events between ticks, never mid-flush,
+                // and the page clears its own pending long press when it
+                // claims, so no timeout can sneak in between.
                 ctx.emit(
                     ResizeItemRequest {
                         item: me,
                         edge,
                         contact: e.contact,
+                        point: e.position,
                     },
                     ctx.tree().parent(me).unwrap(),
                 );
@@ -209,10 +209,14 @@ impl Event for RemoveItemRequest {}
 
 /// A resize handle was pressed on this item's `edge`. Like the × request,
 /// the page owns what follows: it claims the contact and drives the resize.
+/// `point` is the window-local press position — the bead sits NEAR its
+/// boundary, not on it, so the page derives the finger's gap to that
+/// boundary from it.
 pub(super) struct ResizeItemRequest {
     pub(super) item: Handle<HomeItem>,
     pub(super) edge: HandleEdge,
     pub(super) contact: ContactId,
+    pub(super) point: Point,
 }
 impl Event for ResizeItemRequest {}
 
